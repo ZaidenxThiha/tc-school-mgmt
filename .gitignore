@@ -1,0 +1,27 @@
+.DS_Store
+node_modules/
+.next/
+out/
+build/
+dist/
+.env
+.env.local
+.env*.local
+.vercel
+*.log
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.supabase/
+coverage/
+.turbo/
+
+# Business data — never commit (real names, finances, PII)
+*.xlsx
+*.xls
+*.csv
+etl/sql/
+supabase/seed.sql
