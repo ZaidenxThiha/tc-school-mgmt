@@ -5,6 +5,7 @@ import { shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
 import { deleteRow } from '@/lib/actions';
 import Pagination, { parsePage } from '@/components/pagination';
+import SearchInput from '@/components/search-input';
 
 
 export default async function StudentsPage({
@@ -35,7 +36,7 @@ export default async function StudentsPage({
       />
 
       <form className="flex gap-2 mb-4">
-        <input name="q" defaultValue={q} placeholder="Search English or Myanmar name…" className="input max-w-sm" />
+        <SearchInput defaultValue={q} placeholder="Search English or Myanmar name…" className="input max-w-sm" />
         <select name="status" defaultValue={status} className="input max-w-[160px]">
           <option value="Active">Active</option>
           <option value="Break">Break</option>

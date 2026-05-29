@@ -6,12 +6,13 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, UserCog, CalendarDays, Calendar, Banknote, UserX,
   Receipt, FileText, Wallet, Boxes, PartyPopper, BarChart3, Settings, Database,
-  LogOut, Menu, X,
+  GraduationCap, LogOut, Menu, X,
 } from 'lucide-react';
 
 const NAV = [
   { href: '/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
   { href: '/students',   label: 'Students',   icon: Users },
+  { href: '/enrolments', label: 'Enrollment', icon: GraduationCap },
   { href: '/employees',  label: 'Employees',  icon: UserCog },
   { href: '/payroll',    label: 'Payroll',    icon: Banknote },
   { href: '/absences',   label: 'Absences',   icon: UserX },

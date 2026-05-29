@@ -5,6 +5,7 @@ import { mmk, shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
 import { deleteRow } from '@/lib/actions';
 import Pagination, { parsePage } from '@/components/pagination';
+import SearchInput from '@/components/search-input';
 
 
 export default async function PaymentsPage({
@@ -45,7 +46,7 @@ export default async function PaymentsPage({
       />
 
       <form className="flex gap-2 mb-4 flex-wrap">
-        <input name="q" defaultValue={q} placeholder="Search student name…" className="input max-w-sm" />
+        <SearchInput defaultValue={q} placeholder="Search student name…" className="input max-w-sm" />
         <input name="month" type="month" defaultValue={month} className="input max-w-[180px]" />
         <select name="channel" defaultValue={channel} className="input max-w-[150px]">
           <option value="all">All channels</option>

@@ -7,6 +7,8 @@ import { mmk, monthLabel, shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
 import { deleteRow } from '@/lib/actions';
 import Pagination, { parsePage } from '@/components/pagination';
+import { getLevels, getSections } from '@/lib/reference';
+import SearchInput from '@/components/search-input';
 
 
 async function generateInvoices(formData: FormData) {
@@ -51,15 +53,15 @@ export default async function BillingPage({
     { count: activeStudents },
     { data: monthInvoices },
     { data: monthPayments },
-    { data: levels },
-    { data: sectionsList },
+    levels,
+    sectionsList,
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('current_status', 'Active'),
     supabase.from('invoices').select('id, status, total_amount').eq('billing_month', monthIso),
     supabase.from('payments').select('amount').gte('paid_at', monthIso)
       .lt('paid_at', new Date(Date.UTC(Number(month.slice(0,4)), Number(month.slice(5,7)), 1)).toISOString()),
-    supabase.from('levels').select('id, code, name, display_order').order('display_order'),
-    supabase.from('sections').select('id, time_slot, is_online, level_id, level:levels(name, code, display_order)').order('id'),
+    getLevels(),
+    getSections(),
   ]);
 
   // Filter sections list by selected level for the dropdown
@@ -151,7 +153,7 @@ export default async function BillingPage({
           <option value="open">Open</option><option value="paid">Paid</option>
           <option value="partial">Partial</option><option value="void">Void</option>
         </select>
-        <input name="q" defaultValue={q} placeholder="Search student name…" className="input max-w-xs" />
+        <SearchInput defaultValue={q} placeholder="Search student name…" className="input max-w-xs" />
         <button className="btn-ghost">Filter</button>
         {(q || status !== 'all' || level !== 'all' || section !== 'all') && (
           <a href={`/billing?month=${month}`} className="btn-ghost">Clear</a>
@@ -195,7 +197,10 @@ export default async function BillingPage({
                     <td className="text-right tabular-nums">{mmk(inv.total_amount)}</td>
                     <td><span className={badge}>{inv.status}</span></td>
                     <td className="text-right whitespace-nowrap">
-                      <Link href={`/billing/${inv.id}/receipt`} className="text-emerald-700 hover:underline text-xs mr-3">Receipt</Link>
+                      {(inv.status === 'open' || inv.status === 'partial') && (
+                        <Link href={`/payments/new?invoice=${inv.id}`} className="text-emerald-700 hover:underline text-xs mr-3">Pay</Link>
+                      )}
+                      <Link href={`/billing/${inv.id}/receipt`} className="text-slate-600 hover:underline text-xs mr-3">Receipt</Link>
                       <Link href={`/billing/${inv.id}/edit`} className="text-brand-600 hover:underline text-xs mr-3">Edit</Link>
                       {inv.status !== 'void' && inv.status !== 'paid' && (
                         <form action={voidAct} className="inline">

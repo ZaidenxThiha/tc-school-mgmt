@@ -1,7 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export const runtime = 'edge';
-
 // Forwards Supabase magic-link callbacks that landed on `/` because of a
 // misconfigured Site URL. If `?code=...` (PKCE) or `?token_hash=...&type=...`
 // (email OTP) is present, hand off to /auth/callback which exchanges for a session.

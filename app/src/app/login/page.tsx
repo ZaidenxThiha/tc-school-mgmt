@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
-export const runtime = 'edge';
-
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();

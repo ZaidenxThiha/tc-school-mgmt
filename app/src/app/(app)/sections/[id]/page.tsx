@@ -35,7 +35,12 @@ export default async function SectionDetail({ params }: { params: Promise<{ id: 
   return (
     <div className="page">
       <PageHeader title={label} subtitle={`Section #${id}`}
-        actions={<Link href={`/sections/${id}/edit`} className="btn-ghost">Edit section</Link>} />
+        actions={
+          <div className="flex gap-2">
+            <Link href={`/enrolments/new?section=${id}`} className="btn-primary">+ Enroll student</Link>
+            <Link href={`/sections/${id}/edit`} className="btn-ghost">Edit section</Link>
+          </div>
+        } />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="card">

@@ -11,22 +11,37 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
   if (!Number.isFinite(id)) notFound();
 
   const supabase = await createClient();
-  const [{ data: student }, { data: enrolments }, { data: invoices }, { data: payments }] = await Promise.all([
+  const [{ data: student }, { data: enrolments }, { data: invoices }, { data: payments }, { data: openInvoices }] = await Promise.all([
     supabase.from('students').select('*, guardian:guardians(*)').eq('id', id).single(),
     supabase.from('enrolments').select('id, start_date, end_date, status, section:sections(time_slot, is_online, level:levels(name))').eq('student_id', id).order('start_date', { ascending: false }),
     supabase.from('invoices').select('id, billing_month, total_amount, status').eq('student_id', id).order('billing_month', { ascending: false }).limit(12),
     supabase.from('payments').select('id, paid_at, amount, channel').eq('student_id', id).order('paid_at', { ascending: false }).limit(12),
+    supabase.from('invoices').select('total_amount, payments(amount)').eq('student_id', id).in('status', ['open', 'partial']),
   ]);
 
   if (!student) notFound();
   const guardian = student.guardian as unknown as { full_name?: string; phone_primary?: string; phone_secondary?: string; viber_number?: string } | null;
+
+  // Outstanding balance = unpaid portion of every open/partial invoice.
+  const outstanding = ((openInvoices ?? []) as { total_amount: number; payments: { amount: number }[] | null }[])
+    .reduce((sum, inv) => {
+      const paid = (inv.payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
+      return sum + Math.max(0, Number(inv.total_amount) - paid);
+    }, 0);
 
   return (
     <div className="page">
       <PageHeader
         title={student.english_name ?? `Student #${student.id}`}
         subtitle={student.myanmar_name ?? '—'}
-        actions={<Link href={`/students/${student.id}/edit`} className="btn-primary">Edit</Link>}
+        actions={
+          <div className="flex gap-2">
+            <Link href={`/enrolments/new?student=${student.id}`} className="btn-primary">+ Enroll</Link>
+            <Link href={`/billing/new?student=${student.id}`} className="btn-ghost">+ Invoice</Link>
+            <Link href={`/payments/new?student=${student.id}`} className="btn-ghost">+ Payment</Link>
+            <Link href={`/students/${student.id}/edit`} className="btn-ghost">Edit</Link>
+          </div>
+        }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -44,14 +59,25 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
           </div>
         </div>
         <div className="card">
-          <div className="text-xs uppercase text-slate-500 font-medium">Notes</div>
-          <div className="mt-1 text-sm text-slate-600">{student.notes ?? '—'}</div>
+          <div className="text-xs uppercase text-slate-500 font-medium">Outstanding</div>
+          <div className={`text-xl font-semibold mt-1 tabular-nums ${outstanding > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{mmk(outstanding)}</div>
+          <div className="text-xs text-slate-500 mt-2">{outstanding > 0 ? 'Unpaid across open invoices' : 'All invoices settled'}</div>
         </div>
       </div>
 
+      {student.notes && (
+        <div className="card mb-6">
+          <div className="text-xs uppercase text-slate-500 font-medium">Notes</div>
+          <div className="mt-1 text-sm text-slate-600">{student.notes}</div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <section className="card p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 font-medium">Enrolment history</div>
+          <div className="px-4 py-3 border-b border-slate-200 font-medium flex items-center justify-between">
+            <span>Enrolment history</span>
+            <Link href={`/enrolments/new?student=${student.id}`} className="text-brand-600 hover:underline text-xs font-normal">+ Enroll</Link>
+          </div>
           <table className="table">
             <thead><tr><th>Section</th><th>Status</th><th>Start</th><th>End</th></tr></thead>
             <tbody>
@@ -73,18 +99,31 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
         </section>
 
         <section className="card p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 font-medium">Recent invoices</div>
+          <div className="px-4 py-3 border-b border-slate-200 font-medium flex items-center justify-between">
+            <span>Recent invoices</span>
+            <Link href={`/billing/new?student=${student.id}`} className="text-brand-600 hover:underline text-xs font-normal">+ Invoice</Link>
+          </div>
           <table className="table">
-            <thead><tr><th>Month</th><th className="text-right">Total</th><th>Status</th></tr></thead>
+            <thead><tr><th>Month</th><th className="text-right">Total</th><th>Status</th><th className="text-right">Action</th></tr></thead>
             <tbody>
-              {(invoices ?? []).map((i) => (
-                <tr key={i.id}>
-                  <td>{shortDate(i.billing_month)}</td>
-                  <td>{mmk(i.total_amount)}</td>
-                  <td>{i.status}</td>
-                </tr>
-              ))}
-              {(invoices?.length ?? 0) === 0 && <tr><td colSpan={3} className="text-slate-500 text-sm py-4 text-center">No invoices</td></tr>}
+              {(invoices ?? []).map((i) => {
+                const badge =
+                  i.status === 'paid'    ? 'badge-green' :
+                  i.status === 'partial' ? 'badge-amber' :
+                  i.status === 'void'    ? 'badge-slate' : 'badge-rose';
+                const payable = i.status === 'open' || i.status === 'partial';
+                return (
+                  <tr key={i.id}>
+                    <td>{shortDate(i.billing_month)}</td>
+                    <td className="text-right tabular-nums">{mmk(i.total_amount)}</td>
+                    <td><span className={badge}>{i.status}</span></td>
+                    <td className="text-right">
+                      {payable && <Link href={`/payments/new?invoice=${i.id}`} className="text-emerald-700 hover:underline text-xs">Pay</Link>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {(invoices?.length ?? 0) === 0 && <tr><td colSpan={4} className="text-slate-500 text-sm py-4 text-center">No invoices</td></tr>}
             </tbody>
           </table>
         </section>
