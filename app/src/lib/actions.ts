@@ -3,8 +3,11 @@
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { DELETABLE_TABLES, type DeletableTable } from '@/lib/deletable-tables';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
+
+// Tables whose rows feed the cached `reference` getters (lib/reference.ts).
+const REFERENCE_TABLES = new Set(['sections', 'fee_schedule']);
 
 const DeleteSchema = z.object({
   table: z.enum(DELETABLE_TABLES),
@@ -21,6 +24,7 @@ export async function deleteRow(
   const supabase = await createClient();
   const { error } = await supabase.from(parsed.table).delete().eq('id', parsed.id);
   if (error) throw new Error(`Delete ${parsed.table}#${parsed.id}: ${error.message}`);
+  if (REFERENCE_TABLES.has(parsed.table)) revalidateTag('reference');
   if (parsed.redirectTo) {
     revalidatePath(parsed.redirectTo);
     redirect(parsed.redirectTo);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Trash2, Lock, X } from 'lucide-react';
 
 const DELETE_PASSWORD = 'admin123';
@@ -19,6 +19,17 @@ export default function DeleteButton({
   const [open, setOpen] = useState(false);
   const [pw, setPw] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  // Optimistic feedback: dim + lock this row the instant deletion starts, so it
+  // visibly "goes away" before the server round-trip + revalidation completes.
+  useEffect(() => {
+    const row = btnRef.current?.closest('tr');
+    if (!row) return;
+    row.style.transition = 'opacity 150ms';
+    row.style.opacity = pending ? '0.35' : '';
+    row.style.pointerEvents = pending ? 'none' : '';
+  }, [pending]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,6 +46,7 @@ export default function DeleteButton({
   return (
     <>
       <button
+        ref={btnRef}
         type="button"
         disabled={pending}
         onClick={() => { setOpen(true); setError(null); setPw(''); }}

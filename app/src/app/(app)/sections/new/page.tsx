@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { revalidateTag } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
 
@@ -14,6 +15,7 @@ async function create(formData: FormData) {
     capacity: cap ? Number(cap) : null,
   });
   if (error) throw new Error(error.message);
+  revalidateTag('reference'); // refresh cached sections list
   redirect('/sections');
 }
 
