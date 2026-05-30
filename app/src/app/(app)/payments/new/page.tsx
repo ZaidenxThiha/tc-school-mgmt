@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
 import AutoSubmitSelect from '@/components/auto-submit-select';
 import { mmk, monthLabel } from '@/lib/format';
+import SubmitButton from '@/components/submit-button';
 
 async function create(formData: FormData) {
   'use server';
@@ -131,7 +132,7 @@ export default async function NewPayment({
           <textarea name="note" className="input min-h-[60px]" /></div>
         <div className="flex gap-2 justify-end pt-2">
           <a href="/payments" className="btn-ghost">Cancel</a>
-          <button type="submit" className="btn-primary" disabled={!effectiveStudent}>Record</button>
+          <SubmitButton pendingLabel="Recording…" className={`btn-primary ${!effectiveStudent ? 'opacity-60 pointer-events-none' : ''}`}>Record</SubmitButton>
         </div>
       </form>
     </div>

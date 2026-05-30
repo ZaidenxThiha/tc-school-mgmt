@@ -21,7 +21,8 @@ input, select, textarea { font-size: 16px; }
 }
 
 .btn {
-  @apply inline-flex items-center justify-center px-3 sm:px-4 py-2 rounded-md font-medium transition-colors text-sm whitespace-nowrap;
+  @apply inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-md font-medium text-sm whitespace-nowrap
+         transition active:scale-[.97] disabled:opacity-60 disabled:pointer-events-none;
 }
 .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
 .btn-ghost   { @apply btn bg-white text-slate-700 border border-slate-300 hover:bg-slate-50; }
@@ -44,7 +45,17 @@ input, select, textarea { font-size: 16px; }
 /* Numeric columns: any <td> with tabular-nums right-aligns automatically.
    Pair every numeric <th> with `text-right` and they stay in line. */
 .table td.tabular-nums { @apply text-right; }
-.table-scroll { @apply max-h-[65vh] overflow-auto; -webkit-overflow-scrolling: touch; }
+.table-scroll { @apply max-h-[65vh] overflow-auto; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
+/* Hint horizontal scrollability on small screens with edge shadows that fade
+   away once scrolled to the start/end (pure CSS, no JS). */
+@media (max-width: 640px) {
+  .table-scroll {
+    background:
+      radial-gradient(farthest-side at 100% 50%, rgba(15,23,42,.10), transparent) right center / 12px 100% no-repeat,
+      radial-gradient(farthest-side at 0 50%, rgba(15,23,42,.10), transparent) left center / 12px 100% no-repeat;
+    background-attachment: scroll, scroll;
+  }
+}
 .table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
 .table-scroll::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded; }
 .table-scroll::-webkit-scrollbar-track { background: transparent; }

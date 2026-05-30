@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
 import { createEnrolment } from '@/lib/actions/enrolment';
 import { getSections } from '@/lib/reference';
+import SubmitButton from '@/components/submit-button';
 
 const ERRORS: Record<string, string> = {
   duplicate: 'That student already has an open enrolment in this section.',
@@ -91,7 +92,7 @@ export default async function NewEnrolmentPage({
 
         <div className="flex gap-2 justify-end pt-2">
           <a href="/enrolments" className="btn-ghost">Cancel</a>
-          <button type="submit" className="btn-primary">Enroll</button>
+          <SubmitButton pendingLabel="Enrolling…">Enroll</SubmitButton>
         </div>
       </form>
     </div>

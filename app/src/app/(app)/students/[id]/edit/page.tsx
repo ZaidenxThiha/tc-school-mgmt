@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
+import SubmitButton from '@/components/submit-button';
 import { revalidatePath } from 'next/cache';
 
 
@@ -78,7 +79,7 @@ export default async function EditStudent({ params }: { params: Promise<{ id: st
         </div>
         <div className="flex gap-2 justify-end pt-2">
           <a href={`/students/${id}`} className="btn-ghost">Cancel</a>
-          <button type="submit" className="btn-primary">Save</button>
+          <SubmitButton>Save</SubmitButton>
         </div>
       </form>
     </div>

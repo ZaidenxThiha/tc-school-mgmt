@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
 import AutoSubmitSelect from '@/components/auto-submit-select';
 import { mmk, monthLabel } from '@/lib/format';
+import SubmitButton from '@/components/submit-button';
 
 // Maps a fee_schedule column to the invoice_lines.kind used historically.
 const LINE_ITEMS = [
@@ -200,7 +201,7 @@ export default async function NewInvoicePage({
 
             <div className="flex gap-2 justify-end pt-2">
               <a href={`/students/${student.id}`} className="btn-ghost">Cancel</a>
-              <button type="submit" className="btn-primary">Create invoice</button>
+              <SubmitButton pendingLabel="Creating…">Create invoice</SubmitButton>
             </div>
           </form>
         </>

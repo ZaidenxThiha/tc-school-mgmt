@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
+import SubmitButton from '@/components/submit-button';
 
 
 async function createStudent(formData: FormData) {
@@ -70,7 +71,7 @@ export default function NewStudentPage() {
         </div>
         <div className="flex gap-2 justify-end pt-2">
           <a href="/students" className="btn-ghost">Cancel</a>
-          <button type="submit" className="btn-primary">Create</button>
+          <SubmitButton pendingLabel="Creating…">Create</SubmitButton>
         </div>
       </form>
     </div>
