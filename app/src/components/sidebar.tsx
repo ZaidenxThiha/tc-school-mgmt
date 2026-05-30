@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, UserCog, CalendarDays, Calendar, Banknote, UserX,
   Receipt, FileText, Wallet, Boxes, PartyPopper, BarChart3, Settings, Database,
-  GraduationCap, LogOut, Menu, X,
+  GraduationCap, LogOut, Menu, X, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 const NAV = [
@@ -31,6 +31,20 @@ const NAV = [
 export default function Sidebar({ email }: { email: string | null }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Restore the desktop collapsed preference (client-only to avoid hydration mismatch).
+  useEffect(() => {
+    if (localStorage.getItem('sidebar-collapsed') === '1') setCollapsed(true);
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem('sidebar-collapsed', next ? '1' : '0');
+      return next;
+    });
+  }
 
   // Close drawer when navigating
   useEffect(() => { setOpen(false); }, [path]);
@@ -43,6 +57,9 @@ export default function Sidebar({ email }: { email: string | null }) {
     }
   }, [open]);
 
+  // collapsed-only classes are lg:-gated, so the mobile drawer is unaffected.
+  const labelHide = collapsed ? 'lg:hidden' : '';
+
   const navList = (
     <nav className="flex-1 py-3 overflow-y-auto lg:overflow-y-visible">
       {NAV.map((item) => {
@@ -52,12 +69,13 @@ export default function Sidebar({ email }: { email: string | null }) {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-5 py-2.5 text-sm ${
-              active ? 'bg-slate-800 text-white border-l-2 border-brand-500' : 'text-slate-300 hover:bg-slate-800/60'
-            }`}
+            title={collapsed ? item.label : undefined}
+            className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${
+              collapsed ? 'lg:justify-center lg:px-0 lg:gap-0' : ''
+            } ${active ? 'bg-slate-800 text-white border-l-2 border-brand-500' : 'text-slate-300 hover:bg-slate-800/60'}`}
           >
-            <Icon size={16} />
-            {item.label}
+            <Icon size={16} className="shrink-0" />
+            <span className={labelHide}>{item.label}</span>
           </Link>
         );
       })}
@@ -66,9 +84,13 @@ export default function Sidebar({ email }: { email: string | null }) {
 
   const signoutBlock = (
     <form action="/auth/signout" method="post" className="p-4 border-t border-slate-800">
-      <div className="text-xs text-slate-400 mb-2 truncate" title={email ?? ''}>{email ?? '—'}</div>
-      <button type="submit" className="w-full flex items-center justify-center gap-2 text-sm py-2 rounded-md bg-slate-800 hover:bg-slate-700">
-        <LogOut size={14} /> Sign out
+      <div className={`text-xs text-slate-400 mb-2 truncate ${labelHide}`} title={email ?? ''}>{email ?? '—'}</div>
+      <button
+        type="submit"
+        title="Sign out"
+        className="w-full flex items-center justify-center gap-2 text-sm py-2 rounded-md bg-slate-800 hover:bg-slate-700"
+      >
+        <LogOut size={14} className="shrink-0" /> <span className={labelHide}>Sign out</span>
       </button>
     </form>
   );
@@ -93,17 +115,28 @@ export default function Sidebar({ email }: { email: string | null }) {
         />
       )}
 
-      {/* Sidebar — desktop static, mobile drawer */}
+      {/* Sidebar — desktop static (collapsible), mobile drawer */}
       <aside
-        className={`bg-slate-900 text-slate-100 min-h-screen flex flex-col w-60 lg:w-60 lg:static lg:translate-x-0
-                    fixed inset-y-0 left-0 z-50 transition-transform duration-200
+        className={`bg-slate-900 text-slate-100 min-h-screen flex flex-col w-60 lg:static lg:translate-x-0
+                    fixed inset-y-0 left-0 z-50 transition-[transform,width] duration-200
+                    ${collapsed ? 'lg:w-[4.25rem]' : 'lg:w-60'}
                     ${open ? 'translate-x-0' : '-translate-x-full'} lg:transform-none`}
       >
-        <div className="px-5 py-5 border-b border-slate-800 flex items-center justify-between">
-          <div>
+        <div className={`py-5 border-b border-slate-800 flex items-center justify-between ${collapsed ? 'px-5 lg:px-2 lg:justify-center' : 'px-5'}`}>
+          <div className={labelHide}>
             <div className="font-semibold leading-tight">Thazin &amp; Cherry</div>
             <div className="text-xs text-slate-400">Internal · ESL</div>
           </div>
+          {/* Desktop collapse toggle */}
+          <button
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="hidden lg:flex p-1 rounded hover:bg-slate-800 text-slate-300"
+          >
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+          {/* Mobile close */}
           <button
             onClick={() => setOpen(false)}
             aria-label="Close menu"
