@@ -29,7 +29,12 @@ export default async function DashboardPage({
   const currentYear = now.getUTCFullYear();
   const year = Number(sp.year ?? currentYear);
 
-  const { data, error } = await supabase.rpc('dashboard_data', { target_year: year });
+  // Both aggregates are independent — fetch in parallel (one round-trip latency,
+  // not two).
+  const [{ data, error }, { data: owingData }] = await Promise.all([
+    supabase.rpc('dashboard_data', { target_year: year }),
+    supabase.rpc('dashboard_outstanding'),
+  ]);
   const d = (data as DashboardData | null) ?? {
     fiscal_year: year, this_month_start: new Date().toISOString().slice(0,10),
     students_active: 0, students_break: 0, students_left: 0, employees: 0, open_invoices: 0,
@@ -47,7 +52,6 @@ export default async function DashboardPage({
     student_id: number; english_name: string | null; myanmar_name: string | null;
     open_invoices: number; outstanding: number; oldest_unpaid: string;
   };
-  const { data: owingData } = await supabase.rpc('dashboard_outstanding');
   const owing = ((owingData as OutstandingRow[] | null) ?? []).map((r) => ({
     id: r.student_id,
     name: r.english_name ?? r.myanmar_name ?? `#${r.student_id}`,

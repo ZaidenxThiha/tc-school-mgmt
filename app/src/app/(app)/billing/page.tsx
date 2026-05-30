@@ -49,12 +49,29 @@ export default async function BillingPage({
 
   const supabase = await createClient();
 
+  // Build the paginated invoice query up front so it runs in the same batch as
+  // the summary queries (one round-trip instead of two).
+  let invQuery = supabase
+    .from('invoices')
+    .select(`
+      id, billing_month, total_amount, discount, fine, status, is_new_student, created_at, section_id,
+      student:students!inner(id, english_name, myanmar_name, current_status),
+      section:sections!inner(id, time_slot, is_online, level_id, level:levels(name, code))
+    `, { count: 'exact' })
+    .eq('billing_month', monthIso)
+    .order('id', { ascending: false });
+  if (status  !== 'all') invQuery = invQuery.eq('status', status);
+  if (section !== 'all') invQuery = invQuery.eq('section_id', Number(section));
+  if (level   !== 'all') invQuery = invQuery.eq('sections.level_id', Number(level));
+  if (q) invQuery = invQuery.or(`english_name.ilike.%${q}%,myanmar_name.ilike.%${q}%`, { foreignTable: 'students' });
+
   const [
     { count: activeStudents },
     { data: monthInvoices },
     { data: monthPayments },
     levels,
     sectionsList,
+    { data: invoices, count },
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('current_status', 'Active'),
     supabase.from('invoices').select('id, status, total_amount').eq('billing_month', monthIso),
@@ -62,6 +79,7 @@ export default async function BillingPage({
       .lt('paid_at', new Date(Date.UTC(Number(month.slice(0,4)), Number(month.slice(5,7)), 1)).toISOString()),
     getLevels(),
     getSections(),
+    invQuery.range(from, to),
   ]);
 
   // Filter sections list by selected level for the dropdown
@@ -78,24 +96,6 @@ export default async function BillingPage({
   const paidCount = (monthInvoices ?? []).filter((i) => i.status === 'paid').length;
   const voidCount = (monthInvoices ?? []).filter((i) => i.status === 'void').length;
   const collected = (monthPayments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
-
-  // Paginated invoice list for the chosen month
-  let invQuery = supabase
-    .from('invoices')
-    .select(`
-      id, billing_month, total_amount, discount, fine, status, is_new_student, created_at, section_id,
-      student:students!inner(id, english_name, myanmar_name, current_status),
-      section:sections!inner(id, time_slot, is_online, level_id, level:levels(name, code))
-    `, { count: 'exact' })
-    .eq('billing_month', monthIso)
-    .order('id', { ascending: false });
-
-  if (status  !== 'all') invQuery = invQuery.eq('status', status);
-  if (section !== 'all') invQuery = invQuery.eq('section_id', Number(section));
-  if (level   !== 'all') invQuery = invQuery.eq('sections.level_id', Number(level));
-  if (q) invQuery = invQuery.or(`english_name.ilike.%${q}%,myanmar_name.ilike.%${q}%`, { foreignTable: 'students' });
-
-  const { data: invoices, count } = await invQuery.range(from, to);
 
   return (
     <div className="page">
