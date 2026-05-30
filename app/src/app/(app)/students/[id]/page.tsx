@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
 import PayInFullButton from '@/components/pay-in-full-button';
+import DeleteButton from '@/components/delete-button';
+import { deleteInvoice } from '@/lib/actions/invoice';
 
 
 export default async function StudentDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -121,6 +123,15 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
                     <td className="text-right whitespace-nowrap">
                       {payable && <PayInFullButton invoiceId={i.id} amountLabel={i.status === 'open' ? mmk(i.total_amount) : undefined} />}
                       {payable && <Link href={`/payments/new?invoice=${i.id}`} className="text-brand-600 hover:underline text-xs ml-3">Partial</Link>}
+                      {(i.status === 'open' || i.status === 'void') && (
+                        <span className="ml-3 inline-block align-middle">
+                          <DeleteButton
+                            action={deleteInvoice.bind(null, i.id, student.id)}
+                            label="Delete"
+                            description="Delete this invoice and its line items. Cannot be undone. Invoices with payments must be voided instead."
+                          />
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
