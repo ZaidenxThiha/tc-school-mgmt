@@ -121,8 +121,7 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
                     <td className="text-right tabular-nums">{mmk(i.total_amount)}</td>
                     <td><span className={badge}>{i.status}</span></td>
                     <td className="text-right whitespace-nowrap">
-                      {payable && <PayInFullButton invoiceId={i.id} amountLabel={i.status === 'open' ? mmk(i.total_amount) : undefined} />}
-                      {payable && <Link href={`/payments/new?invoice=${i.id}`} className="text-brand-600 hover:underline text-xs ml-3">Partial</Link>}
+                      {payable && <PayInFullButton invoiceId={i.id} amountLabel={mmk(i.total_amount)} />}
                       {(i.status === 'open' || i.status === 'void') && (
                         <span className="ml-3 inline-block align-middle">
                           <DeleteButton

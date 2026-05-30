@@ -10,6 +10,7 @@ import Pagination, { parsePage } from '@/components/pagination';
 import { getLevels, getSections } from '@/lib/reference';
 import SearchInput from '@/components/search-input';
 import PayInFullButton from '@/components/pay-in-full-button';
+import { deleteInvoice } from '@/lib/actions/invoice';
 
 
 async function generateInvoices(formData: FormData) {
@@ -183,7 +184,7 @@ export default async function BillingPage({
         <select name="status" defaultValue={status} className="input max-w-[140px]">
           <option value="all">All status</option>
           <option value="open">Open</option><option value="paid">Paid</option>
-          <option value="partial">Partial</option><option value="void">Void</option>
+          <option value="void">Void</option>
         </select>
         <SearchInput defaultValue={q} placeholder="Search student name…" className="input max-w-xs" />
         <button className="btn-ghost">Filter</button>
@@ -229,18 +230,24 @@ export default async function BillingPage({
                     <td className="text-right tabular-nums">{mmk(inv.total_amount)}</td>
                     <td><span className={badge}>{inv.status}</span></td>
                     <td className="text-right whitespace-nowrap">
-                      {(inv.status === 'open' || inv.status === 'partial') && (
-                        <>
-                          <PayInFullButton invoiceId={inv.id} amountLabel={inv.status === 'open' ? mmk(inv.total_amount) : undefined} />
-                          <Link href={`/payments/new?invoice=${inv.id}`} className="text-brand-600 hover:underline text-xs mr-3 ml-3">Partial</Link>
-                        </>
+                      {inv.status === 'open' && (
+                        <PayInFullButton invoiceId={inv.id} amountLabel={mmk(inv.total_amount)} />
                       )}
-                      <Link href={`/billing/${inv.id}/receipt`} className="text-slate-600 hover:underline text-xs mr-3">Receipt</Link>
-                      <Link href={`/billing/${inv.id}/edit`} className="text-brand-600 hover:underline text-xs mr-3">Edit</Link>
+                      <Link href={`/billing/${inv.id}/receipt`} className="text-slate-600 hover:underline text-xs ml-3">Receipt</Link>
+                      <Link href={`/billing/${inv.id}/edit`} className="text-brand-600 hover:underline text-xs ml-3">Edit</Link>
                       {inv.status !== 'void' && inv.status !== 'paid' && (
-                        <form action={voidAct} className="inline">
+                        <form action={voidAct} className="inline ml-3">
                           <button type="submit" className="text-slate-500 hover:text-slate-700 text-xs">Void</button>
                         </form>
+                      )}
+                      {(inv.status === 'open' || inv.status === 'void') && (
+                        <span className="ml-3 inline-block align-middle">
+                          <DeleteButton
+                            action={deleteInvoice.bind(null, inv.id, s?.id ?? 0)}
+                            label="Delete"
+                            description="Delete this invoice and its line items. Cannot be undone. Invoices with payments must be voided instead."
+                          />
+                        </span>
                       )}
                     </td>
                   </tr>
