@@ -240,15 +240,13 @@ export default async function BillingPage({
                           <button type="submit" className="text-slate-500 hover:text-slate-700 text-xs">Void</button>
                         </form>
                       )}
-                      {(inv.status === 'open' || inv.status === 'void') && (
-                        <span className="ml-3 inline-block align-middle">
-                          <DeleteButton
-                            action={deleteInvoice.bind(null, inv.id, s?.id ?? 0)}
-                            label="Delete"
-                            description="Delete this invoice and its line items. Cannot be undone. Invoices with payments must be voided instead."
-                          />
-                        </span>
-                      )}
+                      <span className="ml-3 inline-block align-middle">
+                        <DeleteButton
+                          action={deleteInvoice.bind(null, inv.id, s?.id ?? 0)}
+                          label="Delete"
+                          description="Delete this invoice, its line items, and any linked payments. Cannot be undone."
+                        />
+                      </span>
                     </td>
                   </tr>
                 );

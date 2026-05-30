@@ -122,15 +122,13 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
                     <td><span className={badge}>{i.status}</span></td>
                     <td className="text-right whitespace-nowrap">
                       {payable && <PayInFullButton invoiceId={i.id} amountLabel={mmk(i.total_amount)} />}
-                      {(i.status === 'open' || i.status === 'void') && (
-                        <span className="ml-3 inline-block align-middle">
-                          <DeleteButton
-                            action={deleteInvoice.bind(null, i.id, student.id)}
-                            label="Delete"
-                            description="Delete this invoice and its line items. Cannot be undone. Invoices with payments must be voided instead."
-                          />
-                        </span>
-                      )}
+                      <span className="ml-3 inline-block align-middle">
+                        <DeleteButton
+                          action={deleteInvoice.bind(null, i.id, student.id)}
+                          label="Delete"
+                          description="Delete this invoice, its line items, and any linked payments. Cannot be undone."
+                        />
+                      </span>
                     </td>
                   </tr>
                 );
