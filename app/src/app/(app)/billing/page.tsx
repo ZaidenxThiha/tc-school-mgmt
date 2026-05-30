@@ -9,6 +9,7 @@ import { deleteRow } from '@/lib/actions';
 import Pagination, { parsePage } from '@/components/pagination';
 import { getLevels, getSections } from '@/lib/reference';
 import SearchInput from '@/components/search-input';
+import PayInFullButton from '@/components/pay-in-full-button';
 
 
 async function generateInvoices(formData: FormData) {
@@ -198,7 +199,10 @@ export default async function BillingPage({
                     <td><span className={badge}>{inv.status}</span></td>
                     <td className="text-right whitespace-nowrap">
                       {(inv.status === 'open' || inv.status === 'partial') && (
-                        <Link href={`/payments/new?invoice=${inv.id}`} className="text-emerald-700 hover:underline text-xs mr-3">Pay</Link>
+                        <>
+                          <PayInFullButton invoiceId={inv.id} amountLabel={inv.status === 'open' ? mmk(inv.total_amount) : undefined} />
+                          <Link href={`/payments/new?invoice=${inv.id}`} className="text-brand-600 hover:underline text-xs mr-3 ml-3">Partial</Link>
+                        </>
                       )}
                       <Link href={`/billing/${inv.id}/receipt`} className="text-slate-600 hover:underline text-xs mr-3">Receipt</Link>
                       <Link href={`/billing/${inv.id}/edit`} className="text-brand-600 hover:underline text-xs mr-3">Edit</Link>

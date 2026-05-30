@@ -3,6 +3,7 @@ import PageHeader from '@/components/page-header';
 import { createEnrolment } from '@/lib/actions/enrolment';
 import { getSections } from '@/lib/reference';
 import SubmitButton from '@/components/submit-button';
+import StudentCombobox from '@/components/student-combobox';
 
 const ERRORS: Record<string, string> = {
   duplicate: 'That student already has an open enrolment in this section.',
@@ -47,15 +48,14 @@ export default async function NewEnrolmentPage({
         <div className="form-grid-2">
           <div className="col-span-2">
             <label className="label">Student</label>
-            <select name="student_id" required defaultValue={presetStudent} className="input">
-              <option value="" disabled>Select a student…</option>
-              {(students ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.english_name ?? s.myanmar_name ?? `Student #${s.id}`}
-                  {s.english_name && s.myanmar_name ? ` — ${s.myanmar_name}` : ''}
-                </option>
-              ))}
-            </select>
+            <StudentCombobox
+              name="student_id"
+              defaultId={presetStudent ? Number(presetStudent) : ''}
+              options={(students ?? []).map((s) => ({
+                id: s.id,
+                label: `${s.english_name ?? s.myanmar_name ?? `Student #${s.id}`}${s.english_name && s.myanmar_name ? ` — ${s.myanmar_name}` : ''} #${s.id}`,
+              }))}
+            />
           </div>
 
           <div className="col-span-2">

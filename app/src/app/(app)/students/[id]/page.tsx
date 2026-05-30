@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
+import PayInFullButton from '@/components/pay-in-full-button';
 
 
 export default async function StudentDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -117,8 +118,9 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
                     <td>{shortDate(i.billing_month)}</td>
                     <td className="text-right tabular-nums">{mmk(i.total_amount)}</td>
                     <td><span className={badge}>{i.status}</span></td>
-                    <td className="text-right">
-                      {payable && <Link href={`/payments/new?invoice=${i.id}`} className="text-emerald-700 hover:underline text-xs">Pay</Link>}
+                    <td className="text-right whitespace-nowrap">
+                      {payable && <PayInFullButton invoiceId={i.id} amountLabel={i.status === 'open' ? mmk(i.total_amount) : undefined} />}
+                      {payable && <Link href={`/payments/new?invoice=${i.id}`} className="text-brand-600 hover:underline text-xs ml-3">Partial</Link>}
                     </td>
                   </tr>
                 );

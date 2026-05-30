@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
-import AutoSubmitSelect from '@/components/auto-submit-select';
+import StudentCombobox from '@/components/student-combobox';
 import { mmk, monthLabel } from '@/lib/format';
 import SubmitButton from '@/components/submit-button';
 
@@ -86,19 +86,12 @@ export default async function NewPayment({
       {/* Step 1 — choose student (reloads their open invoices) */}
       <form className="card mb-4 space-y-2">
         <label className="label">Student</label>
-        <AutoSubmitSelect
-          name="student"
+        <StudentCombobox
           param="student"
-          value={effectiveStudent ? String(effectiveStudent) : ''}
           basePath="/payments/new"
-          className="input"
-        >
-          <option value="">— select a student —</option>
-          {students?.map((s) => (
-            <option key={s.id} value={s.id}>{s.english_name ?? s.myanmar_name ?? `#${s.id}`} #{s.id}</option>
-          ))}
-        </AutoSubmitSelect>
-        <noscript><button className="btn-ghost mt-2">Load invoices</button></noscript>
+          defaultId={effectiveStudent ?? ''}
+          options={(students ?? []).map((s) => ({ id: s.id, label: `${s.english_name ?? s.myanmar_name ?? `#${s.id}`} #${s.id}` }))}
+        />
         {effectiveStudent && openInvoices.length === 0 && (
           <p className="text-xs text-amber-700">No open invoices for this student — the payment will be recorded as a general (unlinked) payment.</p>
         )}
