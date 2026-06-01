@@ -124,6 +124,9 @@ export default async function BillingPage({
       <PageHeader
         title="Billing"
         subtitle={`${monthLabel(monthIso)} · ${(count ?? 0).toLocaleString()} invoices`}
+        actions={
+          <a href={`/billing/export?${new URLSearchParams({ month, status, level, section, q }).toString()}`} className="btn-ghost">Export CSV</a>
+        }
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">

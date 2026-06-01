@@ -32,7 +32,12 @@ export default async function StudentsPage({
       <PageHeader
         title="Students"
         subtitle={`${(count ?? 0).toLocaleString('en-US')} matching · filter: ${status}`}
-        actions={<Link href="/students/new" className="btn-primary">+ Add student</Link>}
+        actions={
+          <>
+            <a href={`/students/export?${new URLSearchParams({ q, status }).toString()}`} className="btn-ghost">Export CSV</a>
+            <Link href="/students/new" className="btn-primary">+ Add student</Link>
+          </>
+        }
       />
 
       <form className="flex gap-2 mb-4">

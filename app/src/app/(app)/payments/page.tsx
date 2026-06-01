@@ -42,7 +42,12 @@ export default async function PaymentsPage({
       <PageHeader
         title="Payments"
         subtitle={`${(count ?? 0).toLocaleString('en-US')} matching`}
-        actions={<Link href="/payments/new" className="btn-primary">+ Add payment</Link>}
+        actions={
+          <>
+            <a href={`/payments/export?${new URLSearchParams({ q, month, channel }).toString()}`} className="btn-ghost">Export CSV</a>
+            <Link href="/payments/new" className="btn-primary">+ Add payment</Link>
+          </>
+        }
       />
 
       <form className="flex gap-2 mb-4 flex-wrap">
