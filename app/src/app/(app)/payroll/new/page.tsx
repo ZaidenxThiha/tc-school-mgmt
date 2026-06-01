@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
+import StudentCombobox from '@/components/student-combobox';
 
 
 async function create(formData: FormData) {
@@ -8,6 +9,7 @@ async function create(formData: FormData) {
   const supabase = await createClient();
   const num = (k: string) => Number(formData.get(k) ?? 0) || 0;
   const employee_id = Number(formData.get('employee_id'));
+  if (!employee_id) throw new Error('Employee is required');
   const month_str = String(formData.get('pay_month') ?? '');
   const pay_month = month_str ? `${month_str}-01` : null;
   const mt_h = num('mt_hours'); const ct_h = num('ct_hours');
@@ -51,12 +53,11 @@ export default async function NewPayslip({
       <form action={create} className="card space-y-4">
         <div className="form-grid-2">
           <div><label className="label">Employee</label>
-            <select name="employee_id" required className="input">
-              <option value="">— select —</option>
-              {employees?.map((e) => (
-                <option key={e.id} value={e.id}>{e.short_name} ({e.category})</option>
-              ))}
-            </select></div>
+            <StudentCombobox
+              name="employee_id"
+              placeholder="Search employee…"
+              options={(employees ?? []).map((e) => ({ id: e.id, label: `${e.short_name ?? `#${e.id}`} (${e.category})` }))}
+            /></div>
           <div><label className="label">Pay month</label>
             <input name="pay_month" type="month" required defaultValue={sp.month ?? new Date().toISOString().slice(0,7)} className="input" /></div>
           <div><label className="label">MT hours</label>

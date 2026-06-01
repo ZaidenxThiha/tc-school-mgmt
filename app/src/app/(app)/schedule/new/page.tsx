@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { assertNoTeacherConflicts } from '@/lib/schedule-conflicts';
 import PageHeader from '@/components/page-header';
+import StudentCombobox from '@/components/student-combobox';
 
 
 const SLOTS = ['7:45-9:45','10-12','1-3','3:15-5:15'] as const;
@@ -112,15 +113,11 @@ export default async function NewAssignment({
             <input name="subject" className="input" placeholder="4 Skills / Reading / Phonic / …" /></div>
           <div></div>
           <div><label className="label">Main Teacher (MT)</label>
-            <select name="mt_employee_id" className="input">
-              <option value="">—</option>
-              {employees?.map((e) => <option key={e.id} value={e.id}>{e.short_name}</option>)}
-            </select></div>
+            <StudentCombobox name="mt_employee_id" placeholder="Search teacher…"
+              options={(employees ?? []).map((e) => ({ id: e.id, label: e.short_name ?? `#${e.id}` }))} /></div>
           <div><label className="label">Class Teacher (CT)</label>
-            <select name="ct_employee_id" className="input">
-              <option value="">—</option>
-              {employees?.map((e) => <option key={e.id} value={e.id}>{e.short_name}</option>)}
-            </select></div>
+            <StudentCombobox name="ct_employee_id" placeholder="Search teacher…"
+              options={(employees ?? []).map((e) => ({ id: e.id, label: e.short_name ?? `#${e.id}` }))} /></div>
         </div>
         <div><label className="label">Notes</label>
           <textarea name="notes" className="input min-h-[60px]" /></div>

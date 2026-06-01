@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import PageHeader from '@/components/page-header';
+import StudentCombobox from '@/components/student-combobox';
 
 
 async function create(formData: FormData) {
@@ -14,8 +15,10 @@ async function create(formData: FormData) {
     const v = formData.get(k);
     return v && String(v).trim() !== '' ? String(v).trim() : null;
   };
+  const employeeId = Number(formData.get('employee_id'));
+  if (!employeeId) throw new Error('Employee is required');
   const { error } = await supabase.from('absences').insert({
-    employee_id: Number(formData.get('employee_id')),
+    employee_id: employeeId,
     absent_date: String(formData.get('absent_date') ?? ''),
     hours: Number(formData.get('hours') ?? 0),
     role: String(formData.get('role') ?? 'MT'),
@@ -39,10 +42,11 @@ export default async function NewAbsence() {
       <form action={create} className="card space-y-4">
         <div className="form-grid-2">
           <div><label className="label">Employee</label>
-            <select name="employee_id" required className="input">
-              <option value="">— select —</option>
-              {employees?.map((e) => <option key={e.id} value={e.id}>{e.short_name}</option>)}
-            </select></div>
+            <StudentCombobox
+              name="employee_id"
+              placeholder="Search employee…"
+              options={(employees ?? []).map((e) => ({ id: e.id, label: `${e.short_name ?? `#${e.id}`}${e.category ? ` (${e.category})` : ''}` }))}
+            /></div>
           <div><label className="label">Date</label>
             <input name="absent_date" type="date" required defaultValue={new Date().toISOString().slice(0,10)} className="input" /></div>
           <div><label className="label">Hours</label>
