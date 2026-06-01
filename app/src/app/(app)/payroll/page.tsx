@@ -39,6 +39,17 @@ async function unmarkPaid(id: number, monthStr: string) {
   redirect(`/payroll?month=${monthStr}`);
 }
 
+// Delete every payslip for the month — undo for an accidental Generate.
+async function deleteAllPayslips(monthStr: string) {
+  'use server';
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) return;
+  const supabase = await createClient();
+  const { error } = await supabase.from('employee_payslips').delete().eq('pay_month', `${monthStr}-01`);
+  if (error) throw new Error(error.message);
+  revalidatePath('/payroll');
+  redirect(`/payroll?month=${monthStr}`);
+}
+
 function pickMonth(s: string | undefined, fallback: string) {
   if (s && /^\d{4}-\d{2}$/.test(s)) return s + '-01';
   return fallback;
@@ -92,24 +103,26 @@ export default async function PayrollPage({
         actions={<Link href={`/payroll/new?month=${monthIso.slice(0,7)}`} className="btn-primary">+ Add payslip</Link>}
       />
 
-      <form className="flex gap-2 mb-3 flex-wrap">
-        <input name="month" type="month" defaultValue={monthIso.slice(0,7)} className="input max-w-[180px]" />
-        <button className="btn-ghost">View month</button>
-      </form>
-
-      <form action={genAction} className="card mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-[220px]">
-          <div className="text-sm font-semibold">Generate payslips from schedule</div>
-          <div className="text-xs text-slate-500">
-            Computes MT/CT hours for {monthLabel} from the schedule × Sat/Sun count, applies absence deductions, writes payslips.
-            Re-running overwrites that month's auto-computed fields (mgmt/guide/summer/other are preserved).
-          </div>
-        </div>
-        <button type="submit" className="btn-primary">Generate for {monthLabel}</button>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <form className="flex gap-2 items-center">
+          <input name="month" type="month" defaultValue={monthIso.slice(0,7)} className="input max-w-[180px]" />
+          <button className="btn-ghost">View month</button>
+        </form>
+        <form action={genAction}>
+          <button type="submit" className="btn-primary" title="Compute MT/CT hours from the schedule (× Sat/Sun count) with absence deductions. Re-running overwrites auto-computed fields; mgmt/guide/summer/other are preserved.">
+            Generate for {monthLabel}
+          </button>
+        </form>
+        <DeleteButton
+          action={deleteAllPayslips.bind(null, monthIso.slice(0, 7))}
+          label="Delete all"
+          description={`Delete ALL payslips for ${monthLabel} (use this to undo an accidental Generate). Cannot be undone.`}
+          className="btn-ghost text-rose-600"
+        />
         {generated !== null && (
           <span className="text-xs text-emerald-700">✓ {generated.toLocaleString()} payslips written.</span>
         )}
-      </form>
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
         <SmallStat label="ESL" value={mmk(totals.esl)} />
