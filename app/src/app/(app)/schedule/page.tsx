@@ -100,6 +100,7 @@ export default async function SchedulePage({
                 </button>
               </form>
             )}
+            <Link href="/schedule/import" className="btn-ghost">Import CSV</Link>
             <Link href={`/schedule/new?month=${monthStr}`} className="btn-primary">+ Add cell</Link>
           </div>
         }
