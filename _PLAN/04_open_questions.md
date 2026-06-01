@@ -20,9 +20,8 @@ All nine items resolved. Phase 1 is unblocked.
 
 1. Run the three setup commands in your regular terminal:
    ```bash
-   claude mcp add --scope project --transport http supabase \
-     "https://mcp.supabase.com/mcp?project_ref=ugjujibpbasskampuums&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage"
-   claude /mcp        # then Authenticate the supabase server
+   # Add + authenticate the Supabase MCP server in your MCP client, pointed at:
+   #   https://mcp.supabase.com/mcp?project_ref=ugjujibpbasskampuums
    npx skills add supabase/agent-skills
    ```
 2. Once authenticated, ask me to **apply the schema** — I'll run `_PLAN/02_schema.sql` against project `ugjujibpbasskampuums` via the Supabase MCP.

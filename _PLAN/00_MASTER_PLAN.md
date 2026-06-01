@@ -9,12 +9,9 @@
 
 **Setup commands (run in regular terminal, not in-app):**
 ```bash
-# 1. Add Supabase MCP server to the project
-claude mcp add --scope project --transport http supabase \
-  "https://mcp.supabase.com/mcp?project_ref=ugjujibpbasskampuums&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage"
-
-# 2. Authenticate
-claude /mcp        # then pick supabase → Authenticate
+# 1. Add the Supabase MCP server to your MCP client, pointed at:
+#    https://mcp.supabase.com/mcp?project_ref=ugjujibpbasskampuums&features=docs,account,database,debugging,development,functions,branching,storage
+# 2. Authenticate the "supabase" server in your MCP client.
 
 # 3. Install Supabase agent skills (optional but recommended)
 npx skills add supabase/agent-skills
