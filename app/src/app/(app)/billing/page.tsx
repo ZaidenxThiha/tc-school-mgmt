@@ -9,8 +9,7 @@ import { deleteRow } from '@/lib/actions';
 import Pagination, { parsePage } from '@/components/pagination';
 import { getLevels, getSections } from '@/lib/reference';
 import SearchInput from '@/components/search-input';
-import PayInFullButton from '@/components/pay-in-full-button';
-import { deleteInvoice } from '@/lib/actions/invoice';
+import BulkInvoiceTable from '@/components/bulk-invoice-table';
 
 
 async function generateInvoices(formData: FormData) {
@@ -196,72 +195,22 @@ export default async function BillingPage({
         )}
       </form>
 
-      <div className="card p-0 overflow-hidden">
-        <div className="table-scroll">
-          <table className="table">
-            <thead><tr>
-              <th>#</th><th>Student</th><th>Section</th><th>Type</th>
-              <th className="text-right">Amount</th><th>Status</th>
-              <th className="text-right">Actions</th>
-            </tr></thead>
-            <tbody>
-              {(invoices ?? []).map((inv) => {
-                const s = inv.student as unknown as { id: number; english_name: string | null; myanmar_name: string | null } | null;
-                const sec = inv.section as unknown as { time_slot: string; is_online: boolean; level: { name: string } | null } | null;
-                const sectionLabel = sec ? `${sec.level?.name ?? '?'} (${sec.time_slot})${sec.is_online ? ' Online' : ''}` : '—';
-                const badge =
-                  inv.status === 'paid'    ? 'badge-green' :
-                  inv.status === 'partial' ? 'badge-amber' :
-                  inv.status === 'void'    ? 'badge-slate' :
-                  'badge-rose';
-                const voidAct = voidInvoice.bind(null, inv.id, month);
-                return (
-                  <tr key={inv.id}>
-                    <td className="text-slate-400">{inv.id}</td>
-                    <td>
-                      {s ? (
-                        <Link href={`/students/${s.id}`} className="text-brand-600 hover:underline">
-                          {s.english_name ?? '—'}
-                          {s.myanmar_name && (
-                            <div className="text-[11px] text-slate-500 font-normal">{s.myanmar_name}</div>
-                          )}
-                        </Link>
-                      ) : '—'}
-                    </td>
-                    <td className="text-xs">{sectionLabel}</td>
-                    <td><span className={inv.is_new_student ? 'badge-amber' : 'badge-slate'}>{inv.is_new_student ? 'New' : 'Old'}</span></td>
-                    <td className="text-right tabular-nums">{mmk(inv.total_amount)}</td>
-                    <td><span className={badge}>{inv.status}</span></td>
-                    <td className="text-right whitespace-nowrap">
-                      {inv.status === 'open' && (
-                        <PayInFullButton invoiceId={inv.id} amountLabel={mmk(inv.total_amount)} />
-                      )}
-                      <Link href={`/billing/${inv.id}/receipt`} className="text-slate-600 hover:underline text-xs ml-3">Receipt</Link>
-                      <Link href={`/billing/${inv.id}/edit`} className="text-brand-600 hover:underline text-xs ml-3">Edit</Link>
-                      {inv.status !== 'void' && inv.status !== 'paid' && (
-                        <form action={voidAct} className="inline ml-3">
-                          <button type="submit" className="text-slate-500 hover:text-slate-700 text-xs">Void</button>
-                        </form>
-                      )}
-                      <span className="ml-3 inline-block align-middle">
-                        <DeleteButton
-                          action={deleteInvoice.bind(null, inv.id, s?.id ?? 0)}
-                          label="Delete"
-                          description="Delete this invoice, its line items, and any linked payments. Cannot be undone."
-                        />
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {(invoices?.length ?? 0) === 0 && (
-                <tr><td colSpan={7} className="text-slate-500 text-sm py-6 text-center">No invoices for {monthLabel(monthIso)}.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={page} pageSize={pageSize} total={count ?? 0} basePath="/billing" query={{ month, status, level, section, q }} />
-      </div>
+      <BulkInvoiceTable
+        invoices={(invoices ?? []).map((inv) => {
+          const s = inv.student as unknown as { id: number; english_name: string | null; myanmar_name: string | null } | null;
+          const sec = inv.section as unknown as { time_slot: string; is_online: boolean; level: { name: string } | null } | null;
+          return {
+            id: inv.id,
+            billing_month: inv.billing_month,
+            total_amount: Number(inv.total_amount),
+            status: inv.status ?? 'open',
+            is_new_student: inv.is_new_student,
+            student: s ? { id: s.id, english: s.english_name, myanmar: s.myanmar_name } : null,
+            sectionLabel: sec ? `${sec.level?.name ?? '?'} (${sec.time_slot})${sec.is_online ? ' Online' : ''}` : '—',
+          };
+        })}
+      />
+      <Pagination page={page} pageSize={pageSize} total={count ?? 0} basePath="/billing" query={{ month, status, level, section, q }} />
 
       <p className="mt-4 text-xs text-slate-500">
         Note: paid invoices show in <Link href="/payments" className="text-brand-600 hover:underline">/payments</Link>.
