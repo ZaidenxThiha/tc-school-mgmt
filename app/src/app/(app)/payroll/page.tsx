@@ -90,10 +90,13 @@ export default async function PayrollPage({
       acc.mtHrs     += Number(p.mt_hours ?? 0);
       acc.ctHrs     += Number(p.ct_hours ?? 0);
       acc.absences  += Number(p.mt_absence_hrs ?? 0) + Number(p.ct_absence_hrs ?? 0);
+      if (p.paid_at) acc.paid += Number(p.total_pay ?? 0);
+      else acc.unpaid += Number(p.total_pay ?? 0);
       return acc;
     },
-    { esl: 0, mgmt: 0, guide: 0, summer: 0, other: 0, total: 0, mtHrs: 0, ctHrs: 0, absences: 0 },
+    { esl: 0, mgmt: 0, guide: 0, summer: 0, other: 0, total: 0, mtHrs: 0, ctHrs: 0, absences: 0, paid: 0, unpaid: 0 },
   );
+  const paidCount = (payslips ?? []).filter((p) => p.paid_at).length;
 
   return (
     <div className="page">
@@ -122,6 +125,12 @@ export default async function PayrollPage({
         {generated !== null && (
           <span className="text-xs text-emerald-700">✓ {generated.toLocaleString()} payslips written.</span>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+        <BigStat label={`Total payroll · ${payslips?.length ?? 0} payslips`} value={mmk(totals.total)} tone="default" />
+        <BigStat label={`Paid · ${paidCount}`} value={mmk(totals.paid)} tone="good" />
+        <BigStat label={`Unpaid · ${(payslips?.length ?? 0) - paidCount}`} value={mmk(totals.unpaid)} tone="bad" />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
@@ -197,6 +206,16 @@ export default async function PayrollPage({
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BigStat({ label, value, tone }: { label: string; value: string; tone: 'default' | 'good' | 'bad' }) {
+  const cls = tone === 'good' ? 'text-emerald-700' : tone === 'bad' ? 'text-rose-700' : 'text-slate-900';
+  return (
+    <div className="card py-3">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500 font-medium">{label}</div>
+      <div className={`text-2xl font-bold tabular-nums mt-1 ${cls}`}>{value}</div>
     </div>
   );
 }
