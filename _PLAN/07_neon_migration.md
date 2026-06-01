@@ -9,7 +9,19 @@ deployed/working until cutover).
 - Supabase currently provides: Postgres · **Auth** · **RLS (`auth_role()`)** · functions/triggers.
 - Neon provides: **Postgres only** → we must replace Auth + RLS in app code.
 
-## Phases
+## Progress
+- ✅ **P0** Neon provisioned (Singapore `ap-southeast-1`), connected.
+- ✅ **P1** Schema on Neon: 34 tables, 43 FKs, all indexes, 5 views, business
+  functions, payment-reconcile trigger. RLS/`auth_role()` stripped; `users` table added.
+- ✅ **P2** Data copied via Supabase secret key → Neon (exact counts): students 535,
+  guardians 537, employees 41, enrolments 535, invoices 1254, invoice_lines 1538,
+  payments 1167, ledger 1623, schedule 306, payslips 119, … + both login users
+  (bcrypt hashes). Sequences reset.
+- ⬜ **P3** Auth.js (login/session/roles) — code rewrite, next.
+- ⬜ **P4** Data layer: 201 call sites (71 files) supabase-js → Postgres.
+- ⬜ **P5** Cutover: env→Neon, drop @supabase/*, functions→sin1, test, merge.
+
+## Phases (detail)
 - **P0 — Provision (BLOCKING, user):** Create Neon DB in Vercel → Storage → Create Database → Neon.
   Adds `DATABASE_URL` to the Vercel project. Provide the connection string for local work.
 - **P1 — Schema on Neon:** Load tables + FKs + indexes + pure SQL functions/triggers
