@@ -17,7 +17,7 @@ deployed/working until cutover).
   guardians 537, employees 41, enrolments 535, invoices 1254, invoice_lines 1538,
   payments 1167, ledger 1623, schedule 306, payslips 119, … + both login users
   (bcrypt hashes). Sequences reset.
-- ⬜ **P3** Auth.js (login/session/roles) — code rewrite, next.
+- ✅ **P3** Auth.js implemented: lib/db.ts (postgres), auth.config.ts (edge), auth.ts (Credentials+bcrypt over users table), NextAuth route, middleware gate, login/signout/layout switched. Builds clean. NOT yet functional end-to-end (data layer still on supabase-js).
 - ⬜ **P4** Data layer: 201 call sites (71 files) supabase-js → Postgres.
 - ⬜ **P5** Cutover: env→Neon, drop @supabase/*, functions→sin1, test, merge.
 

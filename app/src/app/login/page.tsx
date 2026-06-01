@@ -1,22 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<{ kind: 'idle' | 'sending' | 'error'; msg?: string }>({ kind: 'idle' });
 
-  async function signInWithPassword(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus({ kind: 'sending' });
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setStatus({ kind: 'error', msg: error.message });
-    else router.replace('/dashboard');
+    const res = await signIn('credentials', { email, password, redirect: false });
+    if (res?.error) setStatus({ kind: 'error', msg: 'Invalid email or password.' });
+    else { router.replace('/dashboard'); router.refresh(); }
   }
 
   return (
@@ -28,7 +27,7 @@ export default function LoginPage() {
         </div>
 
         <div className="card">
-          <form onSubmit={signInWithPassword} className="space-y-4">
+          <form onSubmit={onSubmit} className="space-y-4">
             <div>
               <label className="label">Email</label>
               <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@example.com" />
@@ -41,7 +40,6 @@ export default function LoginPage() {
               {status.kind === 'sending' ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-
           {status.kind === 'error' && <p className="mt-4 text-sm text-rose-700">{status.msg}</p>}
         </div>
       </div>

@@ -1,13 +1,12 @@
 import Sidebar from '@/components/sidebar';
 import CommandPalette from '@/components/command-palette';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@/auth';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await auth();
   return (
     <div className="lg:flex">
-      <Sidebar email={user?.email ?? null} />
+      <Sidebar email={session?.user?.email ?? null} />
       <main className="flex-1 min-h-screen w-full lg:w-auto overflow-x-hidden">{children}</main>
       <CommandPalette />
     </div>
