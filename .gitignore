@@ -25,3 +25,8 @@ coverage/
 *.csv
 etl/sql/
 supabase/seed.sql
+app/.env.neon
+
+# migration dev helpers
+app/_run.mjs
+app/_*.mjs
