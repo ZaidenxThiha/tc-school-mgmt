@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
 import PayInFullButton from '@/components/pay-in-full-button';
@@ -13,24 +13,29 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
   const id = Number(idStr);
   if (!Number.isFinite(id)) notFound();
 
-  const supabase = await createClient();
-  const [{ data: student }, { data: enrolments }, { data: invoices }, { data: payments }, { data: openInvoices }] = await Promise.all([
-    supabase.from('students').select('*, guardian:guardians(*)').eq('id', id).single(),
-    supabase.from('enrolments').select('id, start_date, end_date, status, section:sections(time_slot, is_online, level:levels(name))').eq('student_id', id).order('start_date', { ascending: false }),
-    supabase.from('invoices').select('id, billing_month, total_amount, status').eq('student_id', id).order('billing_month', { ascending: false }).limit(12),
-    supabase.from('payments').select('id, paid_at, amount, channel').eq('student_id', id).order('paid_at', { ascending: false }).limit(12),
-    supabase.from('invoices').select('total_amount, payments(amount)').eq('student_id', id).in('status', ['open', 'partial']),
+  const [studentRows, enrolments, invoices, payments, outRows] = await Promise.all([
+    sql`select s.*, case when g.id is null then null else
+           json_build_object('full_name',g.full_name,'phone_primary',g.phone_primary,'phone_secondary',g.phone_secondary,'viber_number',g.viber_number) end as guardian
+        from students s left join guardians g on g.id = s.guardian_id where s.id = ${id}`,
+    sql`select e.id, e.start_date, e.end_date, e.status,
+           json_build_object('time_slot', sec.time_slot, 'is_online', sec.is_online, 'level', json_build_object('name', l.name)) as section
+        from enrolments e join sections sec on sec.id = e.section_id join levels l on l.id = sec.level_id
+        where e.student_id = ${id} order by e.start_date desc`,
+    sql`select id, billing_month, total_amount, status from invoices where student_id = ${id} order by billing_month desc limit 12`,
+    sql`select id, paid_at, amount, channel from payments where student_id = ${id} order by paid_at desc limit 12`,
+    sql`select coalesce(sum(greatest(0, i.total_amount - coalesce(pp.paid, 0))), 0)::bigint as outstanding
+        from invoices i left join lateral (select sum(amount) as paid from payments where invoice_id = i.id) pp on true
+        where i.student_id = ${id} and i.status in ('open','partial')`,
   ]);
 
+  const student = studentRows[0] as unknown as {
+    id: number; english_name: string | null; myanmar_name: string | null; current_status: string;
+    enrolled_at: string | Date | null; notes: string | null;
+    guardian: { full_name?: string; phone_primary?: string; phone_secondary?: string; viber_number?: string } | null;
+  } | undefined;
   if (!student) notFound();
-  const guardian = student.guardian as unknown as { full_name?: string; phone_primary?: string; phone_secondary?: string; viber_number?: string } | null;
-
-  // Outstanding balance = unpaid portion of every open/partial invoice.
-  const outstanding = ((openInvoices ?? []) as { total_amount: number; payments: { amount: number }[] | null }[])
-    .reduce((sum, inv) => {
-      const paid = (inv.payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
-      return sum + Math.max(0, Number(inv.total_amount) - paid);
-    }, 0);
+  const guardian = student.guardian;
+  const outstanding = Number(outRows[0]?.outstanding ?? 0);
 
   return (
     <div className="page">

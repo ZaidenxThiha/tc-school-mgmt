@@ -1,36 +1,35 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import SubmitButton from '@/components/submit-button';
 
 
 async function createStudent(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
 
   const phone = String(formData.get('phone') ?? '').trim();
   let guardianId: number | null = null;
   if (phone) {
-    const { data: g } = await supabase
-      .from('guardians')
-      .insert({ phone_primary: phone, viber_number: String(formData.get('viber') ?? '').trim() || null })
-      .select('id').single();
-    guardianId = g?.id ?? null;
+    const g = await sql`
+      insert into guardians (phone_primary, viber_number)
+      values (${phone}, ${String(formData.get('viber') ?? '').trim() || null})
+      returning id`;
+    guardianId = g[0]?.id ?? null;
   }
 
-  const { data: student, error } = await supabase
-    .from('students')
-    .insert({
-      english_name: String(formData.get('english_name') ?? '').trim() || null,
-      myanmar_name: String(formData.get('myanmar_name') ?? '').trim() || null,
-      current_status: String(formData.get('status') ?? 'Active'),
-      enrolled_at: String(formData.get('enrolled_at') ?? '') || null,
-      guardian_id: guardianId,
-    })
-    .select('id').single();
+  const student = await sql`
+    insert into students (english_name, myanmar_name, current_status, enrolled_at, guardian_id)
+    values (
+      ${String(formData.get('english_name') ?? '').trim() || null},
+      ${String(formData.get('myanmar_name') ?? '').trim() || null},
+      ${String(formData.get('status') ?? 'Active')},
+      ${String(formData.get('enrolled_at') ?? '') || null},
+      ${guardianId}
+    ) returning id`;
 
-  if (error) throw new Error(error.message);
-  redirect(`/students/${student!.id}`);
+  redirect(`/students/${student[0].id}`);
 }
 
 export default function NewStudentPage() {

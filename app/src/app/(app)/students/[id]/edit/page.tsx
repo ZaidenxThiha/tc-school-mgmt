@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import SubmitButton from '@/components/submit-button';
 import { revalidatePath } from 'next/cache';
@@ -7,38 +8,34 @@ import { revalidatePath } from 'next/cache';
 
 async function saveStudent(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const phone = String(formData.get('phone') ?? '').trim() || null;
   const phone2 = String(formData.get('phone2') ?? '').trim() || null;
   const viber = String(formData.get('viber') ?? '').trim() || null;
 
   // Update or insert guardian
-  const { data: stu } = await supabase.from('students').select('guardian_id').eq('id', id).single();
-  let guardianId = stu?.guardian_id ?? null;
+  const stu = await sql`select guardian_id from students where id = ${id}`;
+  let guardianId: number | null = stu[0]?.guardian_id ?? null;
   if (phone || phone2 || viber) {
     if (guardianId) {
-      await supabase.from('guardians').update({
-        phone_primary: phone, phone_secondary: phone2, viber_number: viber,
-      }).eq('id', guardianId);
+      await sql`update guardians set phone_primary=${phone}, phone_secondary=${phone2}, viber_number=${viber} where id=${guardianId}`;
     } else {
-      const { data: g } = await supabase.from('guardians').insert({
-        phone_primary: phone, phone_secondary: phone2, viber_number: viber,
-      }).select('id').single();
-      guardianId = g?.id ?? null;
+      const g = await sql`insert into guardians (phone_primary, phone_secondary, viber_number) values (${phone}, ${phone2}, ${viber}) returning id`;
+      guardianId = g[0]?.id ?? null;
     }
   }
 
-  const { error } = await supabase.from('students').update({
-    english_name: String(formData.get('english_name') ?? '').trim() || null,
-    myanmar_name: String(formData.get('myanmar_name') ?? '').trim() || null,
-    current_status: String(formData.get('status') ?? 'Active'),
-    enrolled_at: String(formData.get('enrolled_at') ?? '') || null,
-    notes: String(formData.get('notes') ?? '').trim() || null,
-    guardian_id: guardianId,
-    updated_at: new Date().toISOString(),
-  }).eq('id', id);
+  await sql`
+    update students set
+      english_name = ${String(formData.get('english_name') ?? '').trim() || null},
+      myanmar_name = ${String(formData.get('myanmar_name') ?? '').trim() || null},
+      current_status = ${String(formData.get('status') ?? 'Active')},
+      enrolled_at = ${String(formData.get('enrolled_at') ?? '') || null},
+      notes = ${String(formData.get('notes') ?? '').trim() || null},
+      guardian_id = ${guardianId},
+      updated_at = now()
+    where id = ${id}`;
 
-  if (error) throw new Error(error.message);
   revalidatePath(`/students/${id}`);
   redirect(`/students/${id}`);
 }
@@ -47,10 +44,19 @@ export default async function EditStudent({ params }: { params: Promise<{ id: st
   const { id: idStr } = await params;
   const id = Number(idStr);
   if (!Number.isFinite(id)) notFound();
-  const supabase = await createClient();
-  const { data: s } = await supabase.from('students').select('*, guardian:guardians(*)').eq('id', id).single();
+  const rows = await sql`
+    select s.english_name, s.myanmar_name, s.current_status, s.notes,
+           to_char(s.enrolled_at, 'YYYY-MM-DD') as enrolled_at,
+           g.phone_primary, g.phone_secondary, g.viber_number
+    from students s left join guardians g on g.id = s.guardian_id
+    where s.id = ${id}`;
+  const s = rows[0] as unknown as {
+    english_name: string | null; myanmar_name: string | null; current_status: string;
+    notes: string | null; enrolled_at: string | null;
+    phone_primary: string | null; phone_secondary: string | null; viber_number: string | null;
+  } | undefined;
   if (!s) notFound();
-  const g = s.guardian as unknown as { phone_primary?: string; phone_secondary?: string; viber_number?: string } | null;
+  const g = s;
 
   const action = saveStudent.bind(null, id);
   return (
