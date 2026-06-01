@@ -17,6 +17,28 @@ async function generateFromSchedule(monthIso: string) {
   redirect(`/payroll?month=${monthIso.slice(0,7)}&generated=${data ?? 0}`);
 }
 
+async function markPaid(id: number, monthStr: string) {
+  'use server';
+  const supabase = await createClient();
+  const { error } = await supabase.from('employee_payslips')
+    .update({ paid_at: new Date().toISOString().slice(0, 10) })
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+  revalidatePath('/payroll');
+  redirect(`/payroll?month=${monthStr}`);
+}
+
+async function unmarkPaid(id: number, monthStr: string) {
+  'use server';
+  const supabase = await createClient();
+  const { error } = await supabase.from('employee_payslips')
+    .update({ paid_at: null })
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+  revalidatePath('/payroll');
+  redirect(`/payroll?month=${monthStr}`);
+}
+
 function pickMonth(s: string | undefined, fallback: string) {
   if (s && /^\d{4}-\d{2}$/.test(s)) return s + '-01';
   return fallback;
@@ -138,8 +160,17 @@ export default async function PayrollPage({
                     <td className="text-right tabular-nums">{Number(p.summer_pay) > 0 ? mmk(p.summer_pay) : '—'}</td>
                     <td className="text-right tabular-nums">{Number(p.other_pay) > 0 ? mmk(p.other_pay) : '—'}</td>
                     <td className="text-right tabular-nums font-semibold text-emerald-700">{mmk(p.total_pay)}</td>
-                    <td className="text-xs">{p.paid_at ?? <span className="text-slate-400">unpaid</span>}</td>
-                    <td className="text-right">
+                    <td className="text-xs">{p.paid_at ? <span className="badge-green">{p.paid_at}</span> : <span className="text-slate-400">unpaid</span>}</td>
+                    <td className="text-right whitespace-nowrap">
+                      {p.paid_at ? (
+                        <form action={unmarkPaid.bind(null, p.id, monthIso.slice(0, 7))} className="inline mr-3">
+                          <button type="submit" className="text-slate-500 hover:text-slate-700 text-xs">Unmark</button>
+                        </form>
+                      ) : (
+                        <form action={markPaid.bind(null, p.id, monthIso.slice(0, 7))} className="inline mr-3">
+                          <button type="submit" className="text-emerald-700 hover:underline text-xs">Mark paid</button>
+                        </form>
+                      )}
                       <Link href={`/payroll/${p.id}/edit`} className="text-brand-600 hover:underline text-xs mr-3">Edit</Link>
                       <DeleteButton action={del} />
                     </td>
