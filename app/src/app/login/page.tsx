@@ -9,20 +9,7 @@ export default function LoginPage() {
   const supabase = createClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'magic' | 'password'>('magic');
-  const [status, setStatus] = useState<{ kind: 'idle' | 'sending' | 'sent' | 'error'; msg?: string }>({ kind: 'idle' });
-
-  async function sendMagicLink(e: React.FormEvent) {
-    e.preventDefault();
-    setStatus({ kind: 'sending' });
-    const origin = window.location.origin;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${origin}/auth/callback` },
-    });
-    if (error) setStatus({ kind: 'error', msg: error.message });
-    else setStatus({ kind: 'sent', msg: `Magic link sent to ${email}. Check your inbox.` });
-  }
+  const [status, setStatus] = useState<{ kind: 'idle' | 'sending' | 'error'; msg?: string }>({ kind: 'idle' });
 
   async function signInWithPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -41,38 +28,20 @@ export default function LoginPage() {
         </div>
 
         <div className="card">
-          <div className="flex gap-2 mb-5 text-sm">
-            <button
-              onClick={() => setMode('magic')}
-              className={`flex-1 py-2 rounded-md font-medium ${mode === 'magic' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}
-            >
-              Magic link
-            </button>
-            <button
-              onClick={() => setMode('password')}
-              className={`flex-1 py-2 rounded-md font-medium ${mode === 'password' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}
-            >
-              Password
-            </button>
-          </div>
-
-          <form onSubmit={mode === 'magic' ? sendMagicLink : signInWithPassword} className="space-y-4">
+          <form onSubmit={signInWithPassword} className="space-y-4">
             <div>
               <label className="label">Email</label>
               <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@example.com" />
             </div>
-            {mode === 'password' && (
-              <div>
-                <label className="label">Password</label>
-                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
-              </div>
-            )}
+            <div>
+              <label className="label">Password</label>
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
+            </div>
             <button type="submit" disabled={status.kind === 'sending'} className="btn-primary w-full">
-              {status.kind === 'sending' ? 'Working…' : mode === 'magic' ? 'Send magic link' : 'Sign in'}
+              {status.kind === 'sending' ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
 
-          {status.kind === 'sent' && <p className="mt-4 text-sm text-emerald-700">{status.msg}</p>}
           {status.kind === 'error' && <p className="mt-4 text-sm text-rose-700">{status.msg}</p>}
         </div>
       </div>
