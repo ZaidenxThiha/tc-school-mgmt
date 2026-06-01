@@ -1,27 +1,23 @@
 import { redirect } from 'next/navigation';
 import { revalidateTag } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const cap = formData.get('capacity');
-  const { error } = await supabase.from('sections').insert({
-    level_id: Number(formData.get('level_id')),
-    time_slot: String(formData.get('time_slot') ?? '').trim(),
-    is_online: formData.get('is_online') === 'on',
-    capacity: cap ? Number(cap) : null,
-  });
-  if (error) throw new Error(error.message);
+  await sql`insert into sections (level_id, time_slot, is_online, capacity)
+    values (${Number(formData.get('level_id'))}, ${String(formData.get('time_slot') ?? '').trim()},
+            ${formData.get('is_online') === 'on'}, ${cap ? Number(cap) : null})`;
   revalidateTag('reference'); // refresh cached sections list
   redirect('/sections');
 }
 
 export default async function NewSection() {
-  const supabase = await createClient();
-  const { data: levels } = await supabase.from('levels').select('id, name').order('display_order');
+  const levels = (await sql`select id, name from levels order by display_order`) as unknown as { id: number; name: string }[];
   return (
     <div className="page-narrow">
       <PageHeader title="Add section" />

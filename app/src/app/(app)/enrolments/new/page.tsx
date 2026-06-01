@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { createEnrolment } from '@/lib/actions/enrolment';
 import { getSections } from '@/lib/reference';
@@ -18,15 +18,14 @@ export default async function NewEnrolmentPage({
   const presetStudent = sp.student ?? '';
   const errorMsg = sp.error ? ERRORS[sp.error] ?? 'Could not enroll student.' : null;
 
-  const supabase = await createClient();
-  const [{ data: students }, sections, { data: counts }] = await Promise.all([
-    supabase.from('students').select('id, english_name, myanmar_name').order('english_name'),
+  const [students, sections, counts] = await Promise.all([
+    sql`select id, english_name, myanmar_name from students order by english_name`,
     getSections(),
-    supabase.from('v_section_active_count').select('section_id, active_count'),
+    sql`select section_id, active_count from v_section_active_count`,
   ]);
 
-  const countMap = new Map<number, number>((counts ?? []).map((r) => [r.section_id as number, Number(r.active_count ?? 0)]));
-  const sortedSections = (sections ?? []).slice().sort((a, b) => {
+  const countMap = new Map<number, number>((counts as unknown as { section_id: number; active_count: number }[]).map((r) => [r.section_id, Number(r.active_count ?? 0)]));
+  const sortedSections = (sections as unknown as { id: number; time_slot: string; is_online: boolean; capacity: number | null; level: { name: string; display_order?: number } | null }[]).slice().sort((a, b) => {
     const la = (a.level as unknown as { display_order?: number } | null)?.display_order ?? 999;
     const lb = (b.level as unknown as { display_order?: number } | null)?.display_order ?? 999;
     return la === lb ? (a.time_slot ?? '').localeCompare(b.time_slot ?? '') : la - lb;

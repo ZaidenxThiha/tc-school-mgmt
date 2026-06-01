@@ -3,7 +3,8 @@
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 
 const STATUSES = ['Active', 'Break', 'Left'] as const;
 
@@ -25,52 +26,29 @@ function fields(formData: FormData) {
   };
 }
 
-// Enroll a student into a section. Blocks duplicate open enrolments and
-// over-capacity sections so the roster stays meaningful.
 export async function createEnrolment(formData: FormData) {
   const parsed = EnrolmentSchema.parse(fields(formData));
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
 
   const back = (reason: string) =>
     redirect(`/enrolments/new?section=${parsed.section_id}&student=${parsed.student_id}&error=${reason}`);
 
-  // One open enrolment per student per section.
-  const { data: dup } = await supabase
-    .from('enrolments')
-    .select('id')
-    .eq('student_id', parsed.student_id)
-    .eq('section_id', parsed.section_id)
-    .is('end_date', null)
-    .maybeSingle();
-  if (dup) back('duplicate');
+  const dup = await sql`select id from enrolments where student_id = ${parsed.student_id} and section_id = ${parsed.section_id} and end_date is null limit 1`;
+  if (dup[0]) back('duplicate');
 
-  // Capacity guard (only when the section declares a capacity). Count every
-  // open enrolment (end_date IS NULL), independent of student status, so the
-  // guard can't be bypassed by enrolling a non-active student.
-  const [{ data: section }, { count: openCount }] = await Promise.all([
-    supabase.from('sections').select('capacity').eq('id', parsed.section_id).single(),
-    supabase.from('enrolments').select('id', { count: 'exact', head: true })
-      .eq('section_id', parsed.section_id).is('end_date', null),
+  const [secRows, openRows] = await Promise.all([
+    sql`select capacity from sections where id = ${parsed.section_id}`,
+    sql`select count(*)::int as n from enrolments where section_id = ${parsed.section_id} and end_date is null`,
   ]);
-  const cap = section?.capacity ?? null;
-  if (cap && (openCount ?? 0) >= cap) back('full');
+  const cap = secRows[0]?.capacity ?? null;
+  if (cap && (openRows[0]?.n ?? 0) >= cap) back('full');
 
-  const { error } = await supabase.from('enrolments').insert({
-    student_id: parsed.student_id,
-    section_id: parsed.section_id,
-    start_date: parsed.start_date,
-    end_date: parsed.end_date,
-    status: parsed.status,
-  });
-  if (error) throw new Error(error.message);
+  await sql`
+    insert into enrolments (student_id, section_id, start_date, end_date, status)
+    values (${parsed.student_id}, ${parsed.section_id}, ${parsed.start_date}, ${parsed.end_date ?? null}, ${parsed.status})`;
 
-  // Enrolling as Active implies the student is active — flip them so they show
-  // up in the section roster and active counts (which key off student status).
   if (parsed.status === 'Active') {
-    await supabase.from('students')
-      .update({ current_status: 'Active', updated_at: new Date().toISOString() })
-      .eq('id', parsed.student_id)
-      .neq('current_status', 'Active');
+    await sql`update students set current_status = 'Active', updated_at = now() where id = ${parsed.student_id} and current_status <> 'Active'`;
   }
 
   revalidatePath('/enrolments');
@@ -87,16 +65,11 @@ export async function saveEnrolment(id: number, formData: FormData) {
     end_date: String(formData.get('end_date') ?? '') || null,
     status: String(formData.get('status') ?? 'Active'),
   });
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
 
-  // Closing an enrolment (Left) implies an end date; default to today if blank.
-  const end_date = parsed.status === 'Left' ? (parsed.end_date ?? new Date().toISOString().slice(0, 10)) : parsed.end_date;
+  const end_date = parsed.status === 'Left' ? (parsed.end_date ?? new Date().toISOString().slice(0, 10)) : (parsed.end_date ?? null);
 
-  const { error } = await supabase
-    .from('enrolments')
-    .update({ start_date: parsed.start_date, end_date, status: parsed.status })
-    .eq('id', id);
-  if (error) throw new Error(error.message);
+  await sql`update enrolments set start_date = ${parsed.start_date}, end_date = ${end_date}, status = ${parsed.status} where id = ${id}`;
 
   revalidatePath('/enrolments');
   redirect('/enrolments');

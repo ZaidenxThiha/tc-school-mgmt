@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -10,21 +10,20 @@ import { deleteRow } from '@/lib/actions';
 export default async function SectionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: section }, { data: enrolments }, { data: teacherLinks }] = await Promise.all([
-    supabase.from('sections').select('*, level:levels(name, code)').eq('id', id).single(),
-    supabase.from('enrolments').select(`
-      id, start_date, end_date, status,
-      student:students(id, english_name, myanmar_name, current_status)
-    `).eq('section_id', id).order('id'),
-    supabase.from('section_teachers').select(`
-      teacher_id, weekday_pattern,
-      teacher:employees(id, short_name, full_name, category)
-    `).eq('section_id', id),
+  const [sectionRows, enrolments, teacherLinks] = await Promise.all([
+    sql`select s.*, json_build_object('name', l.name, 'code', l.code) as level
+        from sections s join levels l on l.id = s.level_id where s.id = ${id}`,
+    sql`select e.id, e.start_date, e.end_date, e.status,
+          json_build_object('id', st.id, 'english_name', st.english_name, 'myanmar_name', st.myanmar_name, 'current_status', st.current_status) as student
+        from enrolments e join students st on st.id = e.student_id where e.section_id = ${id} order by e.id`,
+    sql`select t.teacher_id, t.weekday_pattern,
+          json_build_object('id', emp.id, 'short_name', emp.short_name, 'full_name', emp.full_name, 'category', emp.category) as teacher
+        from section_teachers t join employees emp on emp.id = t.teacher_id where t.section_id = ${id}`,
   ]);
 
+  const section = sectionRows[0] as unknown as { time_slot: string; is_online: boolean; capacity: number | null; level: { name: string; code: string } | null } | undefined;
   if (!section) notFound();
-  const level = section.level as unknown as { name: string; code: string } | null;
+  const level = section.level;
   const label = `${level?.name ?? '?'} (${section.time_slot})${section.is_online ? ' Online' : ''}`;
 
   const activeRoster = (enrolments ?? []).filter((e) => {
