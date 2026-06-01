@@ -8,6 +8,8 @@ scheduling, payroll, attendance, inventory, and events. Cambridge level ladder
 **Supabase project ref:** `ugjujibpbasskampuums`
 **Currency:** MMK — stored as `bigint`, displayed with comma separators (`100,000`).
 
+![Dashboard](docs/dashboard.png)
+
 ## Features
 
 - **Dashboard** — active students, employees, open invoices, P&L, students owing (pre-aggregated).
