@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import { mmk, monthLabel, shortDate } from '@/lib/format';
 import PrintButton from '@/components/print-button';
 import { ArrowLeft } from 'lucide-react';
@@ -9,22 +9,28 @@ import { ArrowLeft } from 'lucide-react';
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: inv }, { data: lines }, { data: payments }] = await Promise.all([
-    supabase.from('invoices').select(`
-      *, student:students(id, english_name, myanmar_name, guardian:guardians(phone_primary, viber_number)),
-      section:sections(time_slot, is_online, level:levels(name))
-    `).eq('id', id).single(),
-    supabase.from('invoice_lines').select('*').eq('invoice_id', id).order('id'),
-    supabase.from('payments').select('id, paid_at, amount, channel').eq('invoice_id', id).order('paid_at'),
+  const [invRows, lines, payments] = await Promise.all([
+    sql`select i.*,
+          json_build_object('id', st.id, 'english_name', st.english_name, 'myanmar_name', st.myanmar_name,
+            'guardian', case when g.id is null then null else json_build_object('phone_primary', g.phone_primary, 'viber_number', g.viber_number) end) as student,
+          case when sec.id is null then null else json_build_object('time_slot', sec.time_slot, 'is_online', sec.is_online, 'level', json_build_object('name', l.name)) end as section
+        from invoices i join students st on st.id = i.student_id
+        left join guardians g on g.id = st.guardian_id
+        left join sections sec on sec.id = i.section_id left join levels l on l.id = sec.level_id
+        where i.id = ${id}`,
+    sql`select * from invoice_lines where invoice_id = ${id} order by id`,
+    sql`select id, paid_at, amount, channel from payments where invoice_id = ${id} order by paid_at`,
   ]);
+  const inv = invRows[0] as unknown as {
+    id: number; created_at: string | Date | null; billing_month: string | Date;
+    total_amount: number; discount: number | null; fine: number | null; status: string; is_new_student: boolean | null;
+    student: { id: number; english_name: string | null; myanmar_name: string | null; guardian: { phone_primary?: string; viber_number?: string } | null } | null;
+    section: { time_slot: string; is_online: boolean; level: { name: string } | null } | null;
+  } | undefined;
   if (!inv) notFound();
-  const s = inv.student as unknown as {
-    id: number; english_name: string | null; myanmar_name: string | null;
-    guardian: { phone_primary?: string; viber_number?: string } | null;
-  } | null;
-  const sec = inv.section as unknown as { time_slot: string; is_online: boolean; level: { name: string } | null } | null;
-  const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
+  const s = inv.student;
+  const sec = inv.section;
+  const paid = (payments as unknown as { amount: number }[]).reduce((acc, p) => acc + Number(p.amount ?? 0), 0);
   const balance = Number(inv.total_amount ?? 0) - paid;
 
   return (

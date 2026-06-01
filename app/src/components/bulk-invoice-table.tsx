@@ -9,7 +9,7 @@ import { deleteInvoice, voidInvoice, bulkInvoiceAction } from '@/lib/actions/inv
 
 export type InvoiceRow = {
   id: number;
-  billing_month: string;
+  billing_month: string | Date;
   total_amount: number;
   status: string;
   is_new_student: boolean | null;

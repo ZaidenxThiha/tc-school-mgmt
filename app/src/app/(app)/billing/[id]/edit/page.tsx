@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import { mmk, monthLabel } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -8,47 +9,53 @@ import { deleteRow } from '@/lib/actions';
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('invoices').update({
-    total_amount: Number(formData.get('total_amount') ?? 0),
-    discount: Number(formData.get('discount') ?? 0) || 0,
-    fine: Number(formData.get('fine') ?? 0) || 0,
-    status: String(formData.get('status') ?? 'open'),
-    is_new_student: formData.get('is_new_student') === 'on',
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`update invoices set
+      total_amount = ${Number(formData.get('total_amount') ?? 0)},
+      discount = ${Number(formData.get('discount') ?? 0) || 0},
+      fine = ${Number(formData.get('fine') ?? 0) || 0},
+      status = ${String(formData.get('status') ?? 'open')},
+      is_new_student = ${formData.get('is_new_student') === 'on'}
+    where id = ${id}`;
   redirect('/billing');
 }
 
 async function addLine(invoiceId: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('invoice_lines').insert({
-    invoice_id: invoiceId,
-    kind: String(formData.get('kind') ?? 'other'),
-    description: String(formData.get('description') ?? '').trim() || null,
-    qty: Number(formData.get('qty') ?? 1),
-    unit_price: Number(formData.get('unit_price') ?? 0) || null,
-    amount: Number(formData.get('amount') ?? 0),
-  });
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`insert into invoice_lines (invoice_id, kind, description, qty, unit_price, amount)
+    values (${invoiceId}, ${String(formData.get('kind') ?? 'other')},
+            ${String(formData.get('description') ?? '').trim() || null},
+            ${Number(formData.get('qty') ?? 1)},
+            ${Number(formData.get('unit_price') ?? 0) || null},
+            ${Number(formData.get('amount') ?? 0)})`;
   redirect(`/billing/${invoiceId}/edit`);
 }
 
 export default async function EditInvoice({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: inv }, { data: lines }, { data: payments }] = await Promise.all([
-    supabase.from('invoices').select('*, student:students(id, english_name, myanmar_name), section:sections(time_slot, is_online, level:levels(name))').eq('id', id).single(),
-    supabase.from('invoice_lines').select('*').eq('invoice_id', id).order('id'),
-    supabase.from('payments').select('id, paid_at, amount, channel').eq('invoice_id', id).order('paid_at'),
+  const [invRows, lines, payments] = await Promise.all([
+    sql`select i.*,
+          json_build_object('id', st.id, 'english_name', st.english_name, 'myanmar_name', st.myanmar_name) as student,
+          case when sec.id is null then null else json_build_object('time_slot', sec.time_slot, 'is_online', sec.is_online, 'level', json_build_object('name', l.name)) end as section
+        from invoices i join students st on st.id = i.student_id
+        left join sections sec on sec.id = i.section_id left join levels l on l.id = sec.level_id
+        where i.id = ${id}`,
+    sql`select * from invoice_lines where invoice_id = ${id} order by id`,
+    sql`select id, to_char(paid_at, 'YYYY-MM-DD') as paid_at, amount, channel from payments where invoice_id = ${id} order by paid_at`,
   ]);
+  const inv = invRows[0] as unknown as {
+    billing_month: string | Date; total_amount: number; discount: number | null; fine: number | null;
+    status: string; is_new_student: boolean | null;
+    student: { id: number; english_name: string | null; myanmar_name: string | null } | null;
+    section: { time_slot: string; is_online: boolean; level: { name: string } | null } | null;
+  } | undefined;
   if (!inv) notFound();
   const action = save.bind(null, id);
   const lineAct = addLine.bind(null, id);
-  const s = inv.student as unknown as { id: number; english_name: string | null; myanmar_name: string | null } | null;
-  const sec = inv.section as unknown as { time_slot: string; is_online: boolean; level: { name: string } | null } | null;
+  const s = inv.student;
+  const sec = inv.section;
   return (
     <div className="page-narrow max-w-3xl space-y-4">
       <PageHeader
@@ -72,7 +79,7 @@ export default async function EditInvoice({ params }: { params: Promise<{ id: st
           <div><label className="label">Fine</label>
             <input name="fine" type="number" defaultValue={inv.fine ?? 0} className="input" /></div>
           <div className="sm:col-span-2"><label className="label inline-flex items-center gap-2">
-            <input name="is_new_student" type="checkbox" defaultChecked={inv.is_new_student} /> New-student utilities applied</label></div>
+            <input name="is_new_student" type="checkbox" defaultChecked={inv.is_new_student ?? false} /> New-student utilities applied</label></div>
         </div>
         <div className="flex gap-2 justify-end pt-2">
           <a href="/billing" className="btn-ghost">Cancel</a>

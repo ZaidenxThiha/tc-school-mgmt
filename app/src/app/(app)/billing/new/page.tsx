@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import AutoSubmitSelect from '@/components/auto-submit-select';
 import { mmk, monthLabel } from '@/lib/format';
@@ -15,24 +16,21 @@ const LINE_ITEMS = [
   { key: 'guide',     col: 'guide_fee' as const,    kind: 'guide',    label: 'Guide book', oneTime: true },
 ];
 
-type FeeRow = Record<string, number | null>;
+type FeeRow = Record<string, number | string | null>;
 
-async function feeRowFor(supabase: Awaited<ReturnType<typeof createClient>>, levelId: number, monthIso: string): Promise<FeeRow | null> {
-  const { data } = await supabase
-    .from('fee_schedule')
-    .select('class_fee, textbook_fee, tshirt_fee, id_card_fee, guide_fee, default_discount')
-    .eq('level_id', levelId)
-    .lte('effective_from', monthIso)
-    .or(`effective_to.is.null,effective_to.gte.${monthIso}`)
-    .order('effective_from', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as FeeRow) ?? null;
+async function feeRowFor(levelId: number, monthIso: string): Promise<FeeRow | null> {
+  const rows = await sql`
+    select class_fee, textbook_fee, tshirt_fee, id_card_fee, guide_fee, default_discount
+    from fee_schedule
+    where level_id = ${levelId} and effective_from <= ${monthIso}
+      and (effective_to is null or effective_to >= ${monthIso})
+    order by effective_from desc limit 1`;
+  return (rows[0] as FeeRow) ?? null;
 }
 
 async function createInvoice(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_FINANCE);
 
   const studentId = Number(formData.get('student_id'));
   const sectionId = Number(formData.get('section_id'));
@@ -44,52 +42,36 @@ async function createInvoice(formData: FormData) {
   if (!/^\d{4}-\d{2}$/.test(monthStr)) throw new Error('Invalid billing month');
   const monthIso = `${monthStr}-01`;
 
-  // Resolve the section's level, then the fee schedule for that month.
-  const { data: section } = await supabase.from('sections').select('level_id').eq('id', sectionId).single();
-  if (!section) throw new Error('Section not found');
-  const fees = await feeRowFor(supabase, section.level_id as number, monthIso);
+  const section = await sql`select level_id from sections where id = ${sectionId}`;
+  if (!section[0]) throw new Error('Section not found');
+  const fees = await feeRowFor(section[0].level_id as number, monthIso);
   if (!fees) redirect(`/billing/new?student=${studentId}&section=${sectionId}&error=nofees`);
 
-  // Block exact duplicates (same student + month + section, not voided).
-  const { data: dup } = await supabase
-    .from('invoices').select('id')
-    .eq('student_id', studentId).eq('section_id', sectionId).eq('billing_month', monthIso)
-    .neq('status', 'void').maybeSingle();
-  if (dup) redirect(`/billing/new?student=${studentId}&section=${sectionId}&error=duplicate`);
+  const dup = await sql`
+    select id from invoices
+    where student_id = ${studentId} and section_id = ${sectionId} and billing_month = ${monthIso} and status <> 'void'
+    limit 1`;
+  if (dup[0]) redirect(`/billing/new?student=${studentId}&section=${sectionId}&error=duplicate`);
 
-  // Build line items server-side from the fee schedule (never trust the client).
   const lines = LINE_ITEMS
     .filter((li) => formData.get(`line_${li.key}`) === '1')
     .map((li) => ({ kind: li.kind, label: li.label, amount: Number(fees![li.col] ?? 0) }))
     .filter((l) => l.amount > 0);
-
   if (lines.length === 0) redirect(`/billing/new?student=${studentId}&section=${sectionId}&error=nolines`);
 
-  const subtotal = lines.reduce((s, l) => s + l.amount, 0);
-  const total = Math.max(0, subtotal - discount);
+  const total = Math.max(0, lines.reduce((s, l) => s + l.amount, 0) - discount);
 
-  const { data: invoice, error: invErr } = await supabase
-    .from('invoices')
-    .insert({
-      student_id: studentId,
-      section_id: sectionId,
-      billing_month: monthIso,
-      is_new_student: isNew,
-      discount: discount || null,
-      total_amount: total,
-      status: 'open',
-    })
-    .select('id').single();
-  if (invErr) throw new Error(invErr.message);
+  const inv = await sql`
+    insert into invoices (student_id, section_id, billing_month, is_new_student, discount, total_amount, status)
+    values (${studentId}, ${sectionId}, ${monthIso}, ${isNew}, ${discount || null}, ${total}, 'open')
+    returning id`;
+  const invoiceId = inv[0].id;
 
-  const { error: lineErr } = await supabase.from('invoice_lines').insert(
-    lines.map((l) => ({ invoice_id: invoice!.id, kind: l.kind, description: l.label, qty: 1, unit_price: l.amount, amount: l.amount })),
-  );
-  if (lineErr) throw new Error(lineErr.message);
+  await sql`insert into invoice_lines ${sql(lines.map((l) => ({ invoice_id: invoiceId, kind: l.kind, description: l.label, qty: 1, unit_price: l.amount, amount: l.amount })))}`;
 
   revalidatePath('/billing');
   revalidatePath(`/students/${studentId}`);
-  redirect(`/billing/${invoice!.id}/edit`);
+  redirect(`/billing/${invoiceId}/edit`);
 }
 
 const ERRORS: Record<string, string> = {
@@ -109,17 +91,20 @@ export default async function NewInvoicePage({
   }
   const errorMsg = sp.error ? ERRORS[sp.error] ?? 'Could not create invoice.' : null;
 
-  const supabase = await createClient();
-  const [{ data: student }, { data: enrolments }] = await Promise.all([
-    supabase.from('students').select('id, english_name, myanmar_name').eq('id', studentId).single(),
-    supabase.from('enrolments')
-      .select('id, section_id, section:sections(id, time_slot, is_online, level_id, level:levels(name, display_order))')
-      .eq('student_id', studentId).is('end_date', null),
+  const [studentRows, enrolments] = await Promise.all([
+    sql`select id, english_name, myanmar_name from students where id = ${studentId}`,
+    sql`select e.id, e.section_id,
+          json_build_object('id', sec.id, 'time_slot', sec.time_slot, 'is_online', sec.is_online,
+            'level_id', sec.level_id, 'level', json_build_object('name', l.name, 'display_order', l.display_order)) as section
+        from enrolments e join sections sec on sec.id = e.section_id join levels l on l.id = sec.level_id
+        where e.student_id = ${studentId} and e.end_date is null`,
   ]);
+  const student = studentRows[0] as unknown as { id: number; english_name: string | null; myanmar_name: string | null } | undefined;
   if (!student) notFound();
 
-  const sectionOptions = (enrolments ?? [])
-    .map((e) => e.section as unknown as { id: number; time_slot: string; is_online: boolean; level_id: number; level: { name: string; display_order: number } | null })
+  type Sec = { id: number; time_slot: string; is_online: boolean; level_id: number; level: { name: string; display_order: number } | null };
+  const sectionOptions = (enrolments as unknown as { section: Sec }[])
+    .map((e) => e.section)
     .filter(Boolean)
     .sort((a, b) => (a.level?.display_order ?? 999) - (b.level?.display_order ?? 999));
 
@@ -130,7 +115,7 @@ export default async function NewInvoicePage({
   const defaultMonth = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`;
   const monthIso = `${defaultMonth}-01`;
 
-  const fees = effectiveSection ? await feeRowFor(supabase, effectiveSection.level_id, monthIso) : null;
+  const fees = effectiveSection ? await feeRowFor(effectiveSection.level_id, monthIso) : null;
   const studentName = student.english_name ?? student.myanmar_name ?? `#${student.id}`;
 
   return (

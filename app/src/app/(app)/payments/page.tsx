@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -7,6 +7,10 @@ import { deleteRow } from '@/lib/actions';
 import Pagination, { parsePage } from '@/components/pagination';
 import SearchInput from '@/components/search-input';
 
+type Row = {
+  id: number; paid_at: string | Date; amount: number; channel: string; note: string | null;
+  student_id: number; english_name: string | null; myanmar_name: string | null; full_count: number;
+};
 
 export default async function PaymentsPage({
   searchParams,
@@ -14,34 +18,35 @@ export default async function PaymentsPage({
   const sp = await searchParams;
   const month   = sp.month ?? '';
   const channel = sp.channel ?? 'all';
-  const q       = sp.q ?? '';
-  const { page, pageSize, from, to } = parsePage(sp, 50);
+  const q       = (sp.q ?? '').trim();
+  const { page, pageSize, from } = parsePage(sp, 50);
 
-  const supabase = await createClient();
-  let query = supabase
-    .from('payments')
-    .select('id, paid_at, amount, channel, note, student:students!inner(id, english_name, myanmar_name)', { count: 'exact' })
-    .order('paid_at', { ascending: false });
-
+  let monthCond = sql``;
   if (month && /^\d{4}-\d{2}$/.test(month)) {
     const [y, m] = month.split('-').map(Number);
     const start = new Date(Date.UTC(y, m - 1, 1)).toISOString();
     const end   = new Date(Date.UTC(y, m, 1)).toISOString();
-    query = query.gte('paid_at', start).lt('paid_at', end);
+    monthCond = sql`and p.paid_at >= ${start} and p.paid_at < ${end}`;
   }
-  if (channel !== 'all') query = query.eq('channel', channel);
-  if (q) {
-    // search by student name OR note
-    query = query.or(`english_name.ilike.%${q}%,myanmar_name.ilike.%${q}%`, { foreignTable: 'students' });
-  }
+  const channelCond = channel !== 'all' ? sql`and p.channel = ${channel}` : sql``;
+  const searchCond = q ? sql`and (st.english_name ilike ${'%' + q + '%'} or st.myanmar_name ilike ${'%' + q + '%'})` : sql``;
 
-  const { data: payments, count, error } = await query.range(from, to);
+  const payments = (await sql`
+    select p.id, p.paid_at, p.amount, p.channel, p.note,
+           st.id as student_id, st.english_name, st.myanmar_name,
+           count(*) over()::int as full_count
+    from payments p join students st on st.id = p.student_id
+    where true ${monthCond} ${channelCond} ${searchCond}
+    order by p.paid_at desc
+    limit ${pageSize} offset ${from}
+  `) as unknown as Row[];
+  const count = payments[0]?.full_count ?? 0;
 
   return (
     <div className="page">
       <PageHeader
         title="Payments"
-        subtitle={`${(count ?? 0).toLocaleString('en-US')} matching`}
+        subtitle={`${count.toLocaleString('en-US')} matching`}
         actions={
           <>
             <a href={`/payments/export?${new URLSearchParams({ q, month, channel }).toString()}`} className="btn-ghost">Export CSV</a>
@@ -63,27 +68,21 @@ export default async function PaymentsPage({
       </form>
 
       <div className="card p-0 overflow-hidden">
-        {error && <div className="p-4 text-rose-700 text-sm">{error.message}</div>}
         <div className="table-scroll">
           <table className="table">
             <thead><tr><th>#</th><th>Date</th><th>Student</th><th className="text-right">Amount</th><th>Channel</th><th>Note</th><th className="text-right">Actions</th></tr></thead>
             <tbody>
-              {(payments ?? []).map((p) => {
-                const s = p.student as unknown as { id: number; english_name: string | null; myanmar_name: string | null } | null;
+              {payments.map((p) => {
                 const del = deleteRow.bind(null, 'payments', p.id, '/payments');
                 return (
                   <tr key={p.id}>
                     <td className="text-slate-400">{p.id}</td>
                     <td>{shortDate(p.paid_at)}</td>
                     <td>
-                      {s ? (
-                        <Link href={`/students/${s.id}`} className="text-brand-600 hover:underline">
-                          {s.english_name ?? '—'}
-                          {s.myanmar_name && (
-                            <div className="text-[11px] text-slate-500 font-normal">{s.myanmar_name}</div>
-                          )}
-                        </Link>
-                      ) : '—'}
+                      <Link href={`/students/${p.student_id}`} className="text-brand-600 hover:underline">
+                        {p.english_name ?? '—'}
+                        {p.myanmar_name && <div className="text-[11px] text-slate-500 font-normal">{p.myanmar_name}</div>}
+                      </Link>
                     </td>
                     <td className="tabular-nums">{mmk(p.amount)}</td>
                     <td><span className={p.channel === 'cash' ? 'badge-slate' : 'badge-green'}>{p.channel}</span></td>
@@ -95,13 +94,13 @@ export default async function PaymentsPage({
                   </tr>
                 );
               })}
-              {(payments?.length ?? 0) === 0 && !error && (
+              {payments.length === 0 && (
                 <tr><td colSpan={7} className="text-slate-500 text-sm py-6 text-center">No payments in this filter.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        <Pagination page={page} pageSize={pageSize} total={count ?? 0} basePath="/payments" query={{ q, month, channel }} />
+        <Pagination page={page} pageSize={pageSize} total={count} basePath="/payments" query={{ q, month, channel }} />
       </div>
     </div>
   );
