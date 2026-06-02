@@ -1,33 +1,40 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { auth } from '@/auth';
+import { requireRole } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
+const OWNER = ['owner'] as const;
+const ROLES = ['owner', 'admin', 'accounts', 'readonly'];
+
 async function save(targetId: string, formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.rpc('admin_set_user', {
-    target_id: targetId,
-    new_email: String(formData.get('email') ?? '').trim(),
-    new_full_name: String(formData.get('full_name') ?? '').trim(),
-    new_role: String(formData.get('role') ?? 'readonly'),
-  });
-  if (error) throw new Error(error.message);
+  await requireRole(OWNER);
+  const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  const fullName = String(formData.get('full_name') ?? '').trim() || null;
+  const role = String(formData.get('role') ?? 'readonly');
+  if (!email) throw new Error('Email is required.');
+  if (!ROLES.includes(role)) throw new Error('Invalid role.');
+
+  const dupe = await sql`select 1 from users where lower(email) = ${email} and id <> ${targetId} limit 1`;
+  if (dupe.length) throw new Error('A user with that email already exists.');
+
+  await sql`update users set email = ${email}, full_name = ${fullName}, role = ${role}
+            where id = ${targetId}`;
   redirect('/settings/users');
 }
 
 export default async function EditUser({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const [{ data: users }, { data: { user: me } }] = await Promise.all([
-    supabase.rpc('admin_list_users'),
-    supabase.auth.getUser(),
-  ]);
-  const myRole = (me?.app_metadata?.role as string | undefined) ?? '';
+  const session = await auth();
+  const myRole = (session?.user as { role?: string } | undefined)?.role ?? '';
   if (myRole !== 'owner') {
     return (<div className="page-narrow"><PageHeader title="Edit user" /><div className="card text-sm text-rose-700">Owner role required.</div></div>);
   }
-  const u = (users ?? []).find((x: { id: string }) => x.id === id);
+  const rows = (await sql`select id, email, full_name, role from users where id = ${id} limit 1`) as unknown as
+    { id: string; email: string; full_name: string | null; role: string }[];
+  const u = rows[0];
   if (!u) notFound();
   const action = save.bind(null, id);
   return (

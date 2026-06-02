@@ -1,25 +1,37 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import bcrypt from 'bcryptjs';
+import { sql } from '@/lib/db';
+import { auth } from '@/auth';
+import { requireRole } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
+const OWNER = ['owner'] as const;
+const ROLES = ['owner', 'admin', 'accounts', 'readonly'];
+
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.rpc('admin_create_user', {
-    new_email: String(formData.get('email') ?? '').trim(),
-    new_password: String(formData.get('password') ?? ''),
-    new_full_name: String(formData.get('full_name') ?? '').trim(),
-    new_role: String(formData.get('role') ?? 'readonly'),
-  });
-  if (error) throw new Error(error.message);
+  await requireRole(OWNER);
+  const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  const password = String(formData.get('password') ?? '');
+  const fullName = String(formData.get('full_name') ?? '').trim() || null;
+  const role = String(formData.get('role') ?? 'readonly');
+  if (!email) throw new Error('Email is required.');
+  if (password.length < 6) throw new Error('Password must be at least 6 characters.');
+  if (!ROLES.includes(role)) throw new Error('Invalid role.');
+
+  const existing = await sql`select 1 from users where lower(email) = ${email} limit 1`;
+  if (existing.length) throw new Error('A user with that email already exists.');
+
+  const hash = await bcrypt.hash(password, 10);
+  await sql`insert into users (email, password_hash, full_name, role)
+            values (${email}, ${hash}, ${fullName}, ${role})`;
   redirect('/settings/users');
 }
 
 export default async function NewUser() {
-  const supabase = await createClient();
-  const { data: { user: me } } = await supabase.auth.getUser();
-  const myRole = (me?.app_metadata?.role as string | undefined) ?? '';
+  const session = await auth();
+  const myRole = (session?.user as { role?: string } | undefined)?.role ?? '';
   if (myRole !== 'owner') {
     return (
       <div className="page-narrow">

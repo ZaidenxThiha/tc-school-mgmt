@@ -1,30 +1,34 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import bcrypt from 'bcryptjs';
+import { sql } from '@/lib/db';
+import { auth } from '@/auth';
+import { requireRole } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
+const OWNER = ['owner'] as const;
+
 async function setPassword(targetId: string, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(OWNER);
   const pw = String(formData.get('password') ?? '');
   if (pw.length < 6) throw new Error('Password must be at least 6 characters.');
-  const { error } = await supabase.rpc('admin_set_password', { target_id: targetId, new_password: pw });
-  if (error) throw new Error(error.message);
+  const hash = await bcrypt.hash(pw, 10);
+  const res = await sql`update users set password_hash = ${hash} where id = ${targetId}`;
+  if (res.count === 0) throw new Error('User not found.');
   redirect('/settings/users?changed=password');
 }
 
 export default async function ChangePassword({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const [{ data: users }, { data: { user: me } }] = await Promise.all([
-    supabase.rpc('admin_list_users'),
-    supabase.auth.getUser(),
-  ]);
-  const myRole = (me?.app_metadata?.role as string | undefined) ?? '';
+  const session = await auth();
+  const myRole = (session?.user as { role?: string } | undefined)?.role ?? '';
   if (myRole !== 'owner') {
     return (<div className="page-narrow"><PageHeader title="Change password" /><div className="card text-sm text-rose-700">Owner role required.</div></div>);
   }
-  const u = (users ?? []).find((x: { id: string }) => x.id === id);
+  const rows = (await sql`select id, email, full_name from users where id = ${id} limit 1`) as unknown as
+    { id: string; email: string; full_name: string | null }[];
+  const u = rows[0];
   if (!u) notFound();
   const action = setPassword.bind(null, id);
   return (
