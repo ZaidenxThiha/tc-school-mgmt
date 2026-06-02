@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import { mmk } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -10,31 +11,24 @@ import { deleteRow } from '@/lib/actions';
 
 async function generateFromSchedule(monthIso: string) {
   'use server';
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc('generate_payslips_from_schedule', { target_month: monthIso });
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  const r = await sql`select generate_payslips_from_schedule(${monthIso}) as n`;
   revalidatePath('/payroll');
-  redirect(`/payroll?month=${monthIso.slice(0,7)}&generated=${data ?? 0}`);
+  redirect(`/payroll?month=${monthIso.slice(0,7)}&generated=${r[0]?.n ?? 0}`);
 }
 
 async function markPaid(id: number, monthStr: string) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('employee_payslips')
-    .update({ paid_at: new Date().toISOString().slice(0, 10) })
-    .eq('id', id);
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`update employee_payslips set paid_at = ${new Date().toISOString().slice(0, 10)} where id = ${id}`;
   revalidatePath('/payroll');
   redirect(`/payroll?month=${monthStr}`);
 }
 
 async function unmarkPaid(id: number, monthStr: string) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('employee_payslips')
-    .update({ paid_at: null })
-    .eq('id', id);
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`update employee_payslips set paid_at = null where id = ${id}`;
   revalidatePath('/payroll');
   redirect(`/payroll?month=${monthStr}`);
 }
@@ -43,9 +37,8 @@ async function unmarkPaid(id: number, monthStr: string) {
 async function deleteAllPayslips(monthStr: string) {
   'use server';
   if (!/^\d{4}-\d{2}$/.test(monthStr)) return;
-  const supabase = await createClient();
-  const { error } = await supabase.from('employee_payslips').delete().eq('pay_month', `${monthStr}-01`);
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`delete from employee_payslips where pay_month = ${`${monthStr}-01`}`;
   revalidatePath('/payroll');
   redirect(`/payroll?month=${monthStr}`);
 }
@@ -66,18 +59,15 @@ export default async function PayrollPage({
   const generated = sp.generated ? Number(sp.generated) : null;
   const genAction = generateFromSchedule.bind(null, monthIso);
 
-  const supabase = await createClient();
-  const { data: payslips } = await supabase
-    .from('employee_payslips')
-    .select(`
-      id, mt_hours, ct_hours, mt_absence_hrs, ct_absence_hrs,
-      mt_hourly_fee, ct_hourly_fee,
-      esl_pay, management_pay, guide_pay, summer_pay, other_pay, total_pay,
-      paid_at, payment_method,
-      employee:employees(id, short_name, full_name, category)
-    `)
-    .eq('pay_month', monthIso)
-    .order('id');
+  const payslips = await sql`
+    select p.id, p.mt_hours, p.ct_hours, p.mt_absence_hrs, p.ct_absence_hrs,
+           p.mt_hourly_fee, p.ct_hourly_fee,
+           p.esl_pay, p.management_pay, p.guide_pay, p.summer_pay, p.other_pay, p.total_pay,
+           to_char(p.paid_at, 'YYYY-MM-DD') as paid_at, p.payment_method,
+           json_build_object('id', e.id, 'short_name', e.short_name, 'full_name', e.full_name, 'category', e.category) as employee
+    from employee_payslips p join employees e on e.id = p.employee_id
+    where p.pay_month = ${monthIso}
+    order by p.id`;
 
   const totals = (payslips ?? []).reduce(
     (acc, p) => {

@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import StudentCombobox from '@/components/student-combobox';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_FINANCE);
   const num = (k: string) => Number(formData.get(k) ?? 0) || 0;
   const employee_id = Number(formData.get('employee_id'));
   if (!employee_id) throw new Error('Employee is required');
@@ -14,25 +15,17 @@ async function create(formData: FormData) {
   const pay_month = month_str ? `${month_str}-01` : null;
   const mt_h = num('mt_hours'); const ct_h = num('ct_hours');
   const mt_a = num('mt_absence_hrs'); const ct_a = num('ct_absence_hrs');
-  const { data: emp } = await supabase.from('employees').select('mt_hourly_fee, ct_hourly_fee').eq('id', employee_id).single();
-  const mt_fee = num('mt_hourly_fee') || emp?.mt_hourly_fee || 0;
-  const ct_fee = num('ct_hourly_fee') || emp?.ct_hourly_fee || 0;
+  const emp = await sql`select mt_hourly_fee, ct_hourly_fee from employees where id = ${employee_id}`;
+  const mt_fee = num('mt_hourly_fee') || Number(emp[0]?.mt_hourly_fee ?? 0) || 0;
+  const ct_fee = num('ct_hourly_fee') || Number(emp[0]?.ct_hourly_fee ?? 0) || 0;
   const esl = Math.max(0, mt_h - mt_a) * mt_fee + Math.max(0, ct_h - ct_a) * ct_fee;
-  const { error } = await supabase.from('employee_payslips').insert({
-    employee_id, pay_month,
-    mt_hours: mt_h, ct_hours: ct_h,
-    mt_absence_hrs: mt_a, ct_absence_hrs: ct_a,
-    mt_hourly_fee: mt_fee, ct_hourly_fee: ct_fee,
-    esl_pay: esl,
-    management_pay: num('management_pay'),
-    guide_pay: num('guide_pay'),
-    summer_pay: num('summer_pay'),
-    other_pay: num('other_pay'),
-    payment_method: String(formData.get('payment_method') ?? '') || null,
-    paid_at: String(formData.get('paid_at') ?? '') || null,
-    notes: String(formData.get('notes') ?? '').trim() || null,
-  });
-  if (error) throw new Error(error.message);
+  await sql`insert into employee_payslips
+    (employee_id, pay_month, mt_hours, ct_hours, mt_absence_hrs, ct_absence_hrs, mt_hourly_fee, ct_hourly_fee, esl_pay,
+     management_pay, guide_pay, summer_pay, other_pay, payment_method, paid_at, notes)
+    values (${employee_id}, ${pay_month}, ${mt_h}, ${ct_h}, ${mt_a}, ${ct_a}, ${mt_fee}, ${ct_fee}, ${esl},
+            ${num('management_pay')}, ${num('guide_pay')}, ${num('summer_pay')}, ${num('other_pay')},
+            ${String(formData.get('payment_method') ?? '') || null}, ${String(formData.get('paid_at') ?? '') || null},
+            ${String(formData.get('notes') ?? '').trim() || null})`;
   redirect(`/payroll?month=${month_str}`);
 }
 
@@ -40,13 +33,10 @@ export default async function NewPayslip({
   searchParams,
 }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const { data: employees } = await supabase
-    .from('employees')
-    .select('id, short_name, full_name, category, mt_hourly_fee, ct_hourly_fee, monthly_salary')
-    .eq('is_active', true)
-    .order('category')
-    .order('short_name');
+  const employees = (await sql`
+    select id, short_name, full_name, category, mt_hourly_fee, ct_hourly_fee, monthly_salary
+    from employees where is_active = true order by category, short_name
+  `) as unknown as { id: number; short_name: string | null; category: string }[];
   return (
     <div className="page-narrow max-w-3xl">
       <PageHeader title="Add payslip" />

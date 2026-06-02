@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate, monthLabel } from '@/lib/format';
 
@@ -14,33 +14,31 @@ const CATEGORY_LABEL: Record<string, string> = {
 export default async function EmployeeDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [
-    { data: e },
-    { data: payslips },
-    { data: assignments },
-    { data: absences },
-    { data: sectionLinks },
-  ] = await Promise.all([
-    supabase.from('employees').select('*').eq('id', id).single(),
-    supabase.from('employee_payslips')
-      .select('id, pay_month, mt_hours, ct_hours, mt_absence_hrs, ct_absence_hrs, esl_pay, management_pay, guide_pay, summer_pay, other_pay, total_pay, paid_at')
-      .eq('employee_id', id).order('pay_month', { ascending: false }),
-    supabase.from('schedule_assignments')
-      .select(`
-        id, month, day_of_week, time_slot, class_label, subject,
-        room:rooms(id, name, display_name)
-      `)
-      .or(`mt_employee_id.eq.${id},ct_employee_id.eq.${id}`)
-      .order('month', { ascending: false }).order('day_of_week').order('time_slot'),
-    supabase.from('absences')
-      .select('id, absent_date, hours, role, reason, section:sections(id, time_slot, level:levels(name))')
-      .eq('employee_id', id).order('absent_date', { ascending: false }),
-    supabase.from('section_teachers')
-      .select('section_id, weekday_pattern, teaching_role, section:sections(id, time_slot, is_online, level:levels(name))')
-      .eq('teacher_id', id),
+  const [eRows, payslips, assignments, absences, sectionLinks] = await Promise.all([
+    sql`select * from employees where id = ${id}`,
+    sql`select id, pay_month, mt_hours, ct_hours, mt_absence_hrs, ct_absence_hrs, esl_pay, management_pay, guide_pay, summer_pay, other_pay, total_pay,
+          to_char(paid_at, 'YYYY-MM-DD') as paid_at
+        from employee_payslips where employee_id = ${id} order by pay_month desc`,
+    sql`select a.id, a.month, a.day_of_week, a.time_slot, a.class_label, a.subject,
+          case when r.id is null then null else json_build_object('name', r.name, 'display_name', r.display_name) end as room
+        from schedule_assignments a left join rooms r on r.id = a.room_id
+        where a.mt_employee_id = ${id} or a.ct_employee_id = ${id}
+        order by a.month desc, a.day_of_week, a.time_slot`,
+    sql`select id, absent_date, hours, role, reason from absences where employee_id = ${id} order by absent_date desc`,
+    sql`select t.section_id, t.weekday_pattern, t.teaching_role,
+          json_build_object('id', sec.id, 'time_slot', sec.time_slot, 'is_online', sec.is_online, 'level', json_build_object('name', l.name)) as section
+        from section_teachers t join sections sec on sec.id = t.section_id join levels l on l.id = sec.level_id
+        where t.teacher_id = ${id}`,
   ]);
 
+  const e = eRows[0] as unknown as Record<string, unknown> & {
+    short_name: string; full_name: string; category: string; is_active: boolean; notes: string | null;
+    phone: string | null; email: string | null; address: string | null; monthly_salary: number | null;
+    mt_hourly_fee: number | null; ct_hourly_fee: number | null;
+    date_of_birth: string | Date | null; national_id: string | null; position_title: string | null;
+    education_level: string | null; degree: string | null; available_slots: string | null;
+    emergency_contact: string | null; start_date: string | Date | null;
+  } | undefined;
   if (!e) notFound();
 
   const totalPaid = (payslips ?? []).reduce((s, p) => s + Number(p.total_pay ?? 0), 0);

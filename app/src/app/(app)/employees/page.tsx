@@ -1,10 +1,16 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import DeleteButton from '@/components/delete-button';
 import { deleteRow } from '@/lib/actions';
 import { mmk } from '@/lib/format';
 import Pagination, { parsePage } from '@/components/pagination';
+
+type Row = {
+  id: number; short_name: string; full_name: string; category: string; phone: string | null;
+  mt_hourly_fee: number | null; ct_hourly_fee: number | null; monthly_salary: number | null;
+  is_active: boolean; full_count: number;
+};
 
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -24,26 +30,29 @@ export default async function EmployeesPage({
   const sp = await searchParams;
   const category = sp.category ?? 'all';
   const status   = sp.status   ?? 'active';
-  const q        = sp.q        ?? '';
-  const { page, pageSize, from, to } = parsePage(sp, 50);
+  const q        = (sp.q ?? '').trim();
+  const { page, pageSize, from } = parsePage(sp, 50);
 
-  const supabase = await createClient();
-  let query = supabase
-    .from('employees')
-    .select('id, short_name, full_name, category, phone, mt_hourly_fee, ct_hourly_fee, monthly_salary, is_active', { count: 'exact' })
-    .order('category').order('short_name');
-  if (category !== 'all') query = query.eq('category', category);
-  if (status === 'active')   query = query.eq('is_active', true);
-  if (status === 'inactive') query = query.eq('is_active', false);
-  if (q) query = query.or(`short_name.ilike.%${q}%,full_name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`);
+  const catCond = category !== 'all' ? sql`and category = ${category}` : sql``;
+  const statusCond = status === 'active' ? sql`and is_active = true` : status === 'inactive' ? sql`and is_active = false` : sql``;
+  const t = '%' + q + '%';
+  const searchCond = q ? sql`and (short_name ilike ${t} or full_name ilike ${t} or phone ilike ${t} or email ilike ${t})` : sql``;
 
-  const { data: employees, count, error } = await query.range(from, to);
+  const employees = (await sql`
+    select id, short_name, full_name, category, phone, mt_hourly_fee, ct_hourly_fee, monthly_salary, is_active,
+           count(*) over()::int as full_count
+    from employees
+    where true ${catCond} ${statusCond} ${searchCond}
+    order by category, short_name
+    limit ${pageSize} offset ${from}
+  `) as unknown as Row[];
+  const count = employees[0]?.full_count ?? 0;
 
   return (
     <div className="page">
       <PageHeader
         title="Employees"
-        subtitle={`${(count ?? 0).toLocaleString('en-US')} matching · ${category === 'all' ? 'all categories' : CATEGORY_LABEL[category] ?? category}`}
+        subtitle={`${count.toLocaleString('en-US')} matching · ${category === 'all' ? 'all categories' : CATEGORY_LABEL[category] ?? category}`}
         actions={<Link href="/employees/new" className="btn-primary">+ Add employee</Link>}
       />
 
@@ -69,11 +78,10 @@ export default async function EmployeesPage({
               <th className="text-right">Actions</th>
             </tr></thead>
             <tbody>
-              {error && <tr><td colSpan={8} className="text-rose-700 text-sm">{error.message}</td></tr>}
-              {!error && (employees?.length ?? 0) === 0 && (
+              {employees.length === 0 && (
                 <tr><td colSpan={8} className="text-slate-500 text-sm py-6 text-center">No employees in this filter.</td></tr>
               )}
-              {employees?.map((e) => {
+              {employees.map((e) => {
                 const del = deleteRow.bind(null, 'employees', e.id, '/employees');
                 return (
                   <tr key={e.id}>
@@ -105,7 +113,7 @@ export default async function EmployeesPage({
             </tbody>
           </table>
         </div>
-        <Pagination page={page} pageSize={pageSize} total={count ?? 0} basePath="/employees" query={{ q, category, status }} />
+        <Pagination page={page} pageSize={pageSize} total={count} basePath="/employees" query={{ q, category, status }} />
       </div>
     </div>
   );

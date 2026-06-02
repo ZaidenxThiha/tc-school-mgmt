@@ -1,11 +1,12 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const num = (k: string) => {
     const v = formData.get(k);
     return v && String(v).trim() !== '' ? Number(v) : null;
@@ -14,28 +15,23 @@ async function save(id: number, formData: FormData) {
     const v = formData.get(k);
     return v && String(v).trim() !== '' ? String(v).trim() : null;
   };
-  const { error } = await supabase.from('absences').update({
-    employee_id: Number(formData.get('employee_id')),
-    absent_date: String(formData.get('absent_date') ?? ''),
-    hours: Number(formData.get('hours') ?? 0),
-    role: String(formData.get('role') ?? 'MT'),
-    section_id: num('section_id'),
-    reason: txt('reason'),
-    notes: txt('notes'),
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await sql`update absences set
+      employee_id = ${Number(formData.get('employee_id'))}, absent_date = ${String(formData.get('absent_date') ?? '')},
+      hours = ${Number(formData.get('hours') ?? 0)}, role = ${String(formData.get('role') ?? 'MT')},
+      section_id = ${num('section_id')}, reason = ${txt('reason')}, notes = ${txt('notes')}
+    where id = ${id}`;
   redirect('/absences');
 }
 
 export default async function EditAbsence({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: a }, { data: employees }, { data: sections }] = await Promise.all([
-    supabase.from('absences').select('*').eq('id', id).single(),
-    supabase.from('employees').select('id, short_name').eq('is_active', true).order('short_name'),
-    supabase.from('sections').select('id, time_slot, is_online, level:levels(name)').order('id'),
+  const [aRows, employees, sections] = await Promise.all([
+    sql`select employee_id, to_char(absent_date,'YYYY-MM-DD') as absent_date, hours, role, section_id, reason, notes from absences where id = ${id}`,
+    sql`select id, short_name from employees where is_active = true order by short_name`,
+    sql`select s.id, s.time_slot, s.is_online, json_build_object('name', l.name) as level from sections s join levels l on l.id = s.level_id order by s.id`,
   ]);
+  const a = aRows[0] as unknown as { employee_id: number; absent_date: string; hours: number; role: string; section_id: number | null; reason: string | null; notes: string | null } | undefined;
   if (!a) notFound();
   const action = save.bind(null, id);
   return (

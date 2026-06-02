@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import StatCard from '@/components/stat-card';
 import PLChart from '@/components/pl-chart';
 import LevelChart from '@/components/level-chart';
@@ -24,18 +24,16 @@ export default async function DashboardPage({
   searchParams,
 }: { searchParams: Promise<{ year?: string }> }) {
   const sp = await searchParams;
-  const supabase = await createClient();
   const now = new Date();
   const currentYear = now.getUTCFullYear();
   const year = Number(sp.year ?? currentYear);
 
-  // Both aggregates are independent — fetch in parallel (one round-trip latency,
-  // not two).
-  const [{ data, error }, { data: owingData }] = await Promise.all([
-    supabase.rpc('dashboard_data', { target_year: year }),
-    supabase.rpc('dashboard_outstanding'),
+  // Both aggregates are independent — fetch in parallel.
+  const [dataRows, owingData] = await Promise.all([
+    sql`select dashboard_data(${year}) as d`,
+    sql`select * from dashboard_outstanding()`,
   ]);
-  const d = (data as DashboardData | null) ?? {
+  const d = (dataRows[0]?.d as DashboardData | null) ?? {
     fiscal_year: year, this_month_start: new Date().toISOString().slice(0,10),
     students_active: 0, students_break: 0, students_left: 0, employees: 0, open_invoices: 0,
     this_month: { income: 0, expense: 0, net: 0, cash: 0, kpay: 0 },
@@ -52,7 +50,7 @@ export default async function DashboardPage({
     student_id: number; english_name: string | null; myanmar_name: string | null;
     open_invoices: number; outstanding: number; oldest_unpaid: string;
   };
-  const owing = ((owingData as OutstandingRow[] | null) ?? []).map((r) => ({
+  const owing = (owingData as unknown as OutstandingRow[]).map((r) => ({
     id: r.student_id,
     name: r.english_name ?? r.myanmar_name ?? `#${r.student_id}`,
     count: Number(r.open_invoices),
@@ -87,7 +85,6 @@ export default async function DashboardPage({
         </form>
       </div>
 
-      {error && <div className="card text-rose-700 text-sm mb-3">{error.message}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
         <StatCard size="sm" label="Active" value={(d.students_active ?? 0).toLocaleString()} hint={`${totalStudents} total`} />

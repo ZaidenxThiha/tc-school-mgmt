@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import StudentCombobox from '@/components/student-combobox';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const num = (k: string) => {
     const v = formData.get(k);
     return v && String(v).trim() !== '' ? Number(v) : null;
@@ -17,25 +18,17 @@ async function create(formData: FormData) {
   };
   const employeeId = Number(formData.get('employee_id'));
   if (!employeeId) throw new Error('Employee is required');
-  const { error } = await supabase.from('absences').insert({
-    employee_id: employeeId,
-    absent_date: String(formData.get('absent_date') ?? ''),
-    hours: Number(formData.get('hours') ?? 0),
-    role: String(formData.get('role') ?? 'MT'),
-    section_id: num('section_id'),
-    reason: txt('reason'),
-    notes: txt('notes'),
-  });
-  if (error) throw new Error(error.message);
+  await sql`insert into absences (employee_id, absent_date, hours, role, section_id, reason, notes)
+    values (${employeeId}, ${String(formData.get('absent_date') ?? '')}, ${Number(formData.get('hours') ?? 0)},
+            ${String(formData.get('role') ?? 'MT')}, ${num('section_id')}, ${txt('reason')}, ${txt('notes')})`;
   redirect('/absences');
 }
 
 export default async function NewAbsence() {
-  const supabase = await createClient();
-  const [{ data: employees }, { data: sections }] = await Promise.all([
-    supabase.from('employees').select('id, short_name, category').eq('is_active', true).order('short_name'),
-    supabase.from('sections').select('id, time_slot, is_online, level:levels(name)').order('id'),
-  ]);
+  const [employees, sections] = await Promise.all([
+    sql`select id, short_name, category from employees where is_active = true order by short_name`,
+    sql`select s.id, s.time_slot, s.is_online, json_build_object('name', l.name) as level from sections s join levels l on l.id = s.level_id order by s.id`,
+  ]) as unknown as [{ id: number; short_name: string | null; category: string }[], { id: number; time_slot: string; is_online: boolean; level: { name: string } | null }[]];
   return (
     <div className="page-narrow max-w-xl">
       <PageHeader title="Log absence" subtitle="Auto-deducts from the matching month's payslip." />

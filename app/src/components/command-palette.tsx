@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { Search } from 'lucide-react';
 
 const PAGES: { label: string; href: string }[] = [
@@ -53,14 +52,10 @@ export default function CommandPalette() {
   useEffect(() => {
     if (!open || loaded) return;
     setLoaded(true);
-    createClient()
-      .from('students')
-      .select('id, english_name, myanmar_name')
-      .order('english_name')
-      .limit(2000)
-      .then(({ data }) => {
-        setStudents((data ?? []).map((s) => ({ id: s.id, name: s.english_name ?? s.myanmar_name ?? `#${s.id}` })));
-      });
+    fetch('/api/palette-students')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Student[]) => setStudents(data))
+      .catch(() => {});
   }, [open, loaded]);
 
   const term = q.trim().toLowerCase();

@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
@@ -13,7 +14,7 @@ const CATEGORIES = [
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const num = (k: string) => {
     const v = formData.get(k);
     return v && String(v).trim() !== '' ? Number(v) : null;
@@ -22,38 +23,35 @@ async function save(id: number, formData: FormData) {
     const v = formData.get(k);
     return v && String(v).trim() !== '' ? String(v).trim() : null;
   };
-  const dt = (k: string) => txt(k);
-  const { error } = await supabase.from('employees').update({
-    short_name: String(formData.get('short_name') ?? '').trim(),
-    full_name:  String(formData.get('full_name') ?? '').trim(),
-    category:   String(formData.get('category') ?? 'other'),
-    phone:      txt('phone'),
-    email:      txt('email'),
-    address:    txt('address'),
-    date_of_birth: dt('date_of_birth'),
-    national_id: txt('national_id'),
-    emergency_contact: txt('emergency_contact'),
-    position_title: txt('position_title'),
-    education_level: txt('education_level'),
-    degree: txt('degree'),
-    available_slots: txt('available_slots'),
-    start_date: dt('start_date'),
-    end_date:   dt('end_date'),
-    monthly_salary: num('monthly_salary'),
-    mt_hourly_fee:  num('mt_hourly_fee'),
-    ct_hourly_fee:  num('ct_hourly_fee'),
-    is_active:  formData.get('is_active') === 'on',
-    notes:      txt('notes'),
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await sql`update employees set
+    short_name = ${String(formData.get('short_name') ?? '').trim()},
+    full_name = ${String(formData.get('full_name') ?? '').trim()},
+    category = ${String(formData.get('category') ?? 'other')},
+    phone = ${txt('phone')}, email = ${txt('email')}, address = ${txt('address')},
+    date_of_birth = ${txt('date_of_birth')}, national_id = ${txt('national_id')},
+    emergency_contact = ${txt('emergency_contact')}, position_title = ${txt('position_title')},
+    education_level = ${txt('education_level')}, degree = ${txt('degree')},
+    available_slots = ${txt('available_slots')}, start_date = ${txt('start_date')}, end_date = ${txt('end_date')},
+    monthly_salary = ${num('monthly_salary')}, mt_hourly_fee = ${num('mt_hourly_fee')}, ct_hourly_fee = ${num('ct_hourly_fee')},
+    is_active = ${formData.get('is_active') === 'on'}, notes = ${txt('notes')}
+    where id = ${id}`;
   redirect('/employees');
 }
 
 export default async function EditEmployee({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const { data: e } = await supabase.from('employees').select('*').eq('id', id).single();
+  const rows = await sql`select short_name, full_name, category, position_title, national_id, phone, email, address,
+      emergency_contact, education_level, degree, available_slots, monthly_salary, mt_hourly_fee, ct_hourly_fee, is_active, notes,
+      to_char(date_of_birth,'YYYY-MM-DD') as date_of_birth, to_char(start_date,'YYYY-MM-DD') as start_date, to_char(end_date,'YYYY-MM-DD') as end_date
+    from employees where id = ${id}`;
+  const e = rows[0] as unknown as {
+    short_name: string; full_name: string; category: string; position_title: string | null; national_id: string | null;
+    phone: string | null; email: string | null; address: string | null; emergency_contact: string | null;
+    education_level: string | null; degree: string | null; available_slots: string | null;
+    monthly_salary: number | null; mt_hourly_fee: number | null; ct_hourly_fee: number | null;
+    is_active: boolean | null; notes: string | null; date_of_birth: string | null; start_date: string | null; end_date: string | null;
+  } | undefined;
   if (!e) notFound();
   const action = save.bind(null, id);
   return (
@@ -116,7 +114,7 @@ export default async function EditEmployee({ params }: { params: Promise<{ id: s
             <div><label className="label">Monthly salary (MMK)</label>
               <input name="monthly_salary" type="number" defaultValue={e.monthly_salary ?? ''} className="input" placeholder="(or use hourly below)" /></div>
             <div className="flex items-end"><label className="label inline-flex items-center gap-2 mb-2">
-              <input name="is_active" type="checkbox" defaultChecked={e.is_active} /> Active</label></div>
+              <input name="is_active" type="checkbox" defaultChecked={e.is_active ?? false} /> Active</label></div>
             <div><label className="label">MT hourly fee (MMK)</label>
               <input name="mt_hourly_fee" type="number" defaultValue={e.mt_hourly_fee ?? ''} className="input" placeholder="Main teacher hourly" /></div>
             <div><label className="label">CT hourly fee (MMK)</label>

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
@@ -13,23 +14,19 @@ const CATEGORIES = [
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const short = String(formData.get('short_name') ?? '').trim();
   const full  = String(formData.get('full_name') ?? '').trim() || short;
   if (!short) return;
-  const { error } = await supabase.from('employees').insert({
-    short_name: short,
-    full_name: full,
-    category: String(formData.get('category') ?? 'other'),
-    phone: String(formData.get('phone') ?? '').trim() || null,
-    email: String(formData.get('email') ?? '').trim() || null,
-    address: String(formData.get('address') ?? '').trim() || null,
-    start_date: String(formData.get('start_date') ?? '') || null,
-    monthly_salary: Number(formData.get('monthly_salary') ?? 0) || null,
-    is_active: formData.get('is_active') === 'on',
-    notes: String(formData.get('notes') ?? '').trim() || null,
-  });
-  if (error) throw new Error(error.message);
+  await sql`insert into employees (short_name, full_name, category, phone, email, address, start_date, monthly_salary, is_active, notes)
+    values (${short}, ${full}, ${String(formData.get('category') ?? 'other')},
+            ${String(formData.get('phone') ?? '').trim() || null},
+            ${String(formData.get('email') ?? '').trim() || null},
+            ${String(formData.get('address') ?? '').trim() || null},
+            ${String(formData.get('start_date') ?? '') || null},
+            ${Number(formData.get('monthly_salary') ?? 0) || null},
+            ${formData.get('is_active') === 'on'},
+            ${String(formData.get('notes') ?? '').trim() || null})`;
   redirect('/employees');
 }
 
