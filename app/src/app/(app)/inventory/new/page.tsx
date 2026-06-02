@@ -1,27 +1,25 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_FINANCE);
   const lvl = formData.get('level_id');
-  const { error } = await supabase.from('products').insert({
-    kind: String(formData.get('kind')),
-    name: String(formData.get('name') ?? '').trim(),
-    level_id: lvl ? Number(lvl) : null,
-    size: String(formData.get('size') ?? '').trim() || null,
-    cost_price:  Number(formData.get('cost_price') ?? 0) || null,
-    retail_price: Number(formData.get('retail_price') ?? 0) || null,
-  });
-  if (error) throw new Error(error.message);
+  await sql`insert into products (kind, name, level_id, size, cost_price, retail_price) values (
+    ${String(formData.get('kind'))},
+    ${String(formData.get('name') ?? '').trim()},
+    ${lvl ? Number(lvl) : null},
+    ${String(formData.get('size') ?? '').trim() || null},
+    ${Number(formData.get('cost_price') ?? 0) || null},
+    ${Number(formData.get('retail_price') ?? 0) || null})`;
   redirect('/inventory');
 }
 
 export default async function NewProduct() {
-  const supabase = await createClient();
-  const { data: levels } = await supabase.from('levels').select('id, name').order('display_order');
+  const levels = (await sql`select id, name from levels order by display_order`) as unknown as { id: number; name: string }[];
   return (
     <div className="page-narrow">
       <PageHeader title="Add product" />

@@ -1,19 +1,18 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('events').insert({
-    name: String(formData.get('name') ?? '').trim(),
-    event_date: String(formData.get('event_date') ?? '') || null,
-    budget: Number(formData.get('budget') ?? 0) || null,
-    actual_cost: Number(formData.get('actual_cost') ?? 0) || null,
-    notes: String(formData.get('notes') ?? '').trim() || null,
-  });
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`insert into events (name, event_date, budget, actual_cost, notes) values (
+    ${String(formData.get('name') ?? '').trim()},
+    ${String(formData.get('event_date') ?? '') || null},
+    ${Number(formData.get('budget') ?? 0) || null},
+    ${Number(formData.get('actual_cost') ?? 0) || null},
+    ${String(formData.get('notes') ?? '').trim() || null})`;
   redirect('/events');
 }
 

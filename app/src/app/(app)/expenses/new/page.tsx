@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_FINANCE);
   const channel = String(formData.get('channel'));
   const kind = String(formData.get('kind'));
   const amt = Number(formData.get('amount') ?? 0);
@@ -13,30 +14,28 @@ async function create(formData: FormData) {
   const qty = formData.get('qty') ? Number(formData.get('qty')) : null;
   const unit = formData.get('unit_price') ? Number(formData.get('unit_price')) : null;
 
-  const row = {
-    entry_date: String(formData.get('entry_date') ?? new Date().toISOString().slice(0,10)),
-    description: String(formData.get('description') ?? '').trim() || null,
-    account_id: Number(formData.get('account_id')),
-    income_cash:  kind === 'income' && channel === 'cash' ? amt : 0,
-    income_kpay:  kind === 'income' && channel === 'kpay' ? amt : 0,
-    expense_cash: kind === 'expense' && channel === 'cash' ? amt : 0,
-    expense_kpay: kind === 'expense' && channel === 'kpay' ? amt : 0,
-    source: 'Manual' as const,
-    product_id: productId,
-    qty,
-    unit_price: unit,
-  };
-  const { error } = await supabase.from('ledger_entries').insert(row);
-  if (error) throw new Error(error.message);
+  await sql`insert into ledger_entries
+    (entry_date, description, account_id, income_cash, income_kpay, expense_cash, expense_kpay, source, product_id, qty, unit_price)
+    values (
+      ${String(formData.get('entry_date') ?? new Date().toISOString().slice(0,10))},
+      ${String(formData.get('description') ?? '').trim() || null},
+      ${Number(formData.get('account_id'))},
+      ${kind === 'income' && channel === 'cash' ? amt : 0},
+      ${kind === 'income' && channel === 'kpay' ? amt : 0},
+      ${kind === 'expense' && channel === 'cash' ? amt : 0},
+      ${kind === 'expense' && channel === 'kpay' ? amt : 0},
+      'Manual', ${productId}, ${qty}, ${unit})`;
   redirect('/expenses');
 }
 
 export default async function NewExpense() {
-  const supabase = await createClient();
-  const [{ data: accts }, { data: products }] = await Promise.all([
-    supabase.from('chart_of_accounts').select('id, group_name, category').order('category').order('group_name'),
-    supabase.from('products').select('id, kind, name, size, cost_price').eq('is_active', true).order('kind').order('name'),
-  ]);
+  const [accts, products] = await Promise.all([
+    sql`select id, group_name, category from chart_of_accounts order by category, group_name`,
+    sql`select id, kind, name, size, cost_price from products where is_active = true order by kind, name`,
+  ]) as unknown as [
+    { id: number; group_name: string; category: string }[],
+    { id: number; kind: string; name: string; size: string | null; cost_price: number | null }[],
+  ];
   return (
     <div className="page-narrow">
       <PageHeader title="Add ledger entry" subtitle="Optionally link to inventory — qty will auto-add stock" />

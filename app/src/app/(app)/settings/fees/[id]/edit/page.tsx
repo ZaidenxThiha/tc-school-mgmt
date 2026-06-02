@@ -1,35 +1,40 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('fee_schedule').update({
-    level_id: Number(formData.get('level_id')),
-    effective_from: String(formData.get('effective_from') ?? ''),
-    effective_to:   String(formData.get('effective_to') ?? '') || null,
-    class_fee:    Number(formData.get('class_fee') ?? 0),
-    textbook_fee: Number(formData.get('textbook_fee') ?? 0),
-    tshirt_fee:   Number(formData.get('tshirt_fee') ?? 0),
-    id_card_fee:  Number(formData.get('id_card_fee') ?? 0),
-    guide_fee:    Number(formData.get('guide_fee') ?? 0),
-    default_discount: Number(formData.get('default_discount') ?? 0),
-    notes: String(formData.get('notes') ?? '').trim() || null,
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_ADMIN);
+  await sql`update fee_schedule set
+    level_id = ${Number(formData.get('level_id'))},
+    effective_from = ${String(formData.get('effective_from') ?? '')},
+    effective_to = ${String(formData.get('effective_to') ?? '') || null},
+    class_fee = ${Number(formData.get('class_fee') ?? 0)},
+    textbook_fee = ${Number(formData.get('textbook_fee') ?? 0)},
+    tshirt_fee = ${Number(formData.get('tshirt_fee') ?? 0)},
+    id_card_fee = ${Number(formData.get('id_card_fee') ?? 0)},
+    guide_fee = ${Number(formData.get('guide_fee') ?? 0)},
+    default_discount = ${Number(formData.get('default_discount') ?? 0)},
+    notes = ${String(formData.get('notes') ?? '').trim() || null}
+    where id = ${id}`;
   redirect('/settings');
 }
 
 export default async function EditFee({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: f }, { data: levels }] = await Promise.all([
-    supabase.from('fee_schedule').select('*').eq('id', id).single(),
-    supabase.from('levels').select('id, name').order('display_order'),
-  ]);
+  const [fRows, levels] = await Promise.all([
+    sql`select *, to_char(effective_from, 'YYYY-MM-DD') as effective_from, to_char(effective_to, 'YYYY-MM-DD') as effective_to from fee_schedule where id = ${id}`,
+    sql`select id, name from levels order by display_order`,
+  ]) as unknown as [
+    Array<{ id: number; level_id: number; effective_from: string; effective_to: string | null;
+      class_fee: number; textbook_fee: number | null; tshirt_fee: number | null; id_card_fee: number | null;
+      guide_fee: number | null; default_discount: number | null; notes: string | null }>,
+    { id: number; name: string }[],
+  ];
+  const f = fRows[0];
   if (!f) notFound();
   const action = save.bind(null, id);
   return (

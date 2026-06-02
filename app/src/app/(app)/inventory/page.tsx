@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { mmk } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -15,19 +15,25 @@ export default async function InventoryPage({
   const q    = sp.q    ?? '';
   const { page, pageSize, from, to } = parsePage(sp, 50);
 
-  const supabase = await createClient();
-  let query = supabase
-    .from('products')
-    .select('id, kind, name, level_id, size, cost_price, retail_price, level:levels(name)', { count: 'exact' })
-    .order('kind').order('name');
-  if (kind !== 'all') query = query.eq('kind', kind);
-  if (q) query = query.ilike('name', `%${q}%`);
+  const kindCond = kind !== 'all' ? sql`and p.kind = ${kind}` : sql``;
+  const qCond    = q ? sql`and p.name ilike ${'%' + q + '%'}` : sql``;
 
-  const [{ data: products, count }, { data: stock }] = await Promise.all([
-    query.range(from, to),
-    supabase.from('v_product_stock').select('product_id, on_hand'),
-  ]);
-  const stockMap = new Map<number, number>((stock ?? []).map((r) => [r.product_id as number, Number(r.on_hand ?? 0)]));
+  const [rows, stock] = await Promise.all([
+    sql`select p.id, p.kind, p.name, p.level_id, p.size, p.cost_price, p.retail_price,
+          case when l.id is null then null else json_build_object('name', l.name) end as level,
+          count(*) over()::int as full_count
+        from products p left join levels l on l.id = p.level_id
+        where true ${kindCond} ${qCond}
+        order by p.kind, p.name limit ${pageSize} offset ${from}`,
+    sql`select product_id, on_hand from v_product_stock`,
+  ]) as unknown as [
+    Array<{ id: number; kind: string; name: string; level_id: number | null; size: string | null;
+      cost_price: number | null; retail_price: number | null; level: { name: string } | null; full_count: number }>,
+    { product_id: number; on_hand: number }[],
+  ];
+  const products = rows;
+  const count = rows[0]?.full_count ?? 0;
+  const stockMap = new Map<number, number>((stock ?? []).map((r) => [Number(r.product_id), Number(r.on_hand ?? 0)]));
 
   return (
     <div className="page">

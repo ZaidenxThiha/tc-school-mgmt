@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import { toCsv, csvResponse, type CsvColumn } from '@/lib/csv';
 
 type Row = {
@@ -13,19 +13,17 @@ export async function GET(req: NextRequest) {
   const status = sp.get('status') ?? 'Active';
   const q = sp.get('q') ?? '';
 
-  const supabase = await createClient();
-  let query = supabase
-    .from('students')
-    .select('id, english_name, myanmar_name, current_status, enrolled_at, guardian:guardians(phone_primary)')
-    .order('id', { ascending: false })
-    .limit(5000);
-  if (status !== 'all') query = query.eq('current_status', status);
-  if (q) query = query.or(`english_name.ilike.%${q}%,myanmar_name.ilike.%${q}%`);
+  const statusCond = status !== 'all' ? sql`and s.current_status = ${status}` : sql``;
+  const qCond = q ? sql`and (s.english_name ilike ${'%' + q + '%'} or s.myanmar_name ilike ${'%' + q + '%'})` : sql``;
 
-  const { data, error } = await query;
-  if (error) return new Response(error.message, { status: 500 });
-
-  const rows = (data ?? []) as unknown as Row[];
+  const rows = (await sql`
+    select s.id, s.english_name, s.myanmar_name, s.current_status,
+           to_char(s.enrolled_at, 'YYYY-MM-DD') as enrolled_at,
+           case when g.id is null then null else json_build_object('phone_primary', g.phone_primary) end as guardian
+    from students s left join guardians g on g.id = s.guardian_id
+    where true ${statusCond} ${qCond}
+    order by s.id desc limit 5000
+  `) as unknown as Row[];
   const columns: CsvColumn<Row>[] = [
     { key: 'id', label: 'ID', value: (r) => r.id },
     { key: 'english', label: 'English name', value: (r) => r.english_name ?? '' },

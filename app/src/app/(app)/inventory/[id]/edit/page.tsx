@@ -1,33 +1,37 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_FINANCE);
   const lvl = formData.get('level_id');
-  const { error } = await supabase.from('products').update({
-    kind: String(formData.get('kind')),
-    name: String(formData.get('name') ?? '').trim(),
-    level_id: lvl ? Number(lvl) : null,
-    size: String(formData.get('size') ?? '').trim() || null,
-    cost_price:  Number(formData.get('cost_price') ?? 0) || null,
-    retail_price: Number(formData.get('retail_price') ?? 0) || null,
-    is_active: formData.get('is_active') === 'on',
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await sql`update products set
+    kind = ${String(formData.get('kind'))},
+    name = ${String(formData.get('name') ?? '').trim()},
+    level_id = ${lvl ? Number(lvl) : null},
+    size = ${String(formData.get('size') ?? '').trim() || null},
+    cost_price = ${Number(formData.get('cost_price') ?? 0) || null},
+    retail_price = ${Number(formData.get('retail_price') ?? 0) || null},
+    is_active = ${formData.get('is_active') === 'on'}
+    where id = ${id}`;
   redirect('/inventory');
 }
 
 export default async function EditProduct({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: p }, { data: levels }] = await Promise.all([
-    supabase.from('products').select('*').eq('id', id).single(),
-    supabase.from('levels').select('id, name').order('display_order'),
-  ]);
+  const [pRows, levels] = await Promise.all([
+    sql`select * from products where id = ${id}`,
+    sql`select id, name from levels order by display_order`,
+  ]) as unknown as [
+    Array<{ id: number; kind: string; name: string; level_id: number | null; size: string | null;
+      cost_price: number | null; retail_price: number | null; is_active: boolean }>,
+    { id: number; name: string }[],
+  ];
+  const p = pRows[0];
   if (!p) notFound();
   const action = save.bind(null, id);
   return (

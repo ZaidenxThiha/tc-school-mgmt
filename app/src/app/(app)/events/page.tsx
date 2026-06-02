@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -7,8 +7,10 @@ import { deleteRow } from '@/lib/actions';
 
 
 export default async function EventsPage() {
-  const supabase = await createClient();
-  const { data: events } = await supabase.from('events').select('*').order('event_date', { ascending: false });
+  const events = (await sql`
+    select id, name, to_char(event_date, 'YYYY-MM-DD') as event_date, budget, actual_cost
+    from events order by event_date desc
+  `) as unknown as { id: number; name: string; event_date: string | null; budget: number | null; actual_cost: number | null }[];
   return (
     <div className="page">
       <PageHeader title="Events" subtitle="Budget vs actual"

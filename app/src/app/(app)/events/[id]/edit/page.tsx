@@ -1,27 +1,27 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('events').update({
-    name: String(formData.get('name') ?? '').trim(),
-    event_date: String(formData.get('event_date') ?? '') || null,
-    budget: Number(formData.get('budget') ?? 0) || null,
-    actual_cost: Number(formData.get('actual_cost') ?? 0) || null,
-    notes: String(formData.get('notes') ?? '').trim() || null,
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`update events set
+    name = ${String(formData.get('name') ?? '').trim()},
+    event_date = ${String(formData.get('event_date') ?? '') || null},
+    budget = ${Number(formData.get('budget') ?? 0) || null},
+    actual_cost = ${Number(formData.get('actual_cost') ?? 0) || null},
+    notes = ${String(formData.get('notes') ?? '').trim() || null}
+    where id = ${id}`;
   redirect(`/events/${id}`);
 }
 
 export default async function EditEvent({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const { data: e } = await supabase.from('events').select('*').eq('id', id).single();
+  const eRows = (await sql`select id, name, to_char(event_date, 'YYYY-MM-DD') as event_date, budget, actual_cost, notes from events where id = ${id}`) as unknown as { id: number; name: string; event_date: string | null; budget: number | null; actual_cost: number | null; notes: string | null }[];
+  const e = eRows[0];
   if (!e) notFound();
   const action = save.bind(null, id);
   return (

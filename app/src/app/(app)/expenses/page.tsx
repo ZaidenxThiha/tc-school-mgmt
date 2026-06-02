@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -16,9 +16,9 @@ export default async function ExpensesPage({
   const q       = sp.q ?? '';
   const { page, pageSize, from, to } = parsePage(sp, 50);
 
-  const supabase = await createClient();
-  const accountsRes = await supabase.from('chart_of_accounts').select('id, group_name, category').order('category').order('group_name');
-  const accounts = accountsRes.data ?? [];
+  const accounts = (await sql`
+    select id, group_name, category from chart_of_accounts order by category, group_name
+  `) as unknown as { id: number; group_name: string; category: string }[];
 
   // Compute Opening & Closing balances when a month is selected
   let openingBalance = 0;
@@ -33,38 +33,44 @@ export default async function ExpensesPage({
     monthStartIso = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10);
     monthEndIso   = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
     // Opening = sum of (income - expense) for ALL rows BEFORE this month
-    const { data: priorRows } = await supabase
-      .from('ledger_entries')
-      .select('income_cash, income_kpay, expense_cash, expense_kpay')
-      .lt('entry_date', monthStartIso);
-    openingBalance = (priorRows ?? []).reduce(
-      (s, r) => s + Number(r.income_cash ?? 0) + Number(r.income_kpay ?? 0)
-              - Number(r.expense_cash ?? 0) - Number(r.expense_kpay ?? 0),
-      0,
-    );
+    const prior = await sql`select coalesce(sum(income_cash + income_kpay - expense_cash - expense_kpay), 0)::bigint as bal
+      from ledger_entries where entry_date < ${monthStartIso}`;
+    openingBalance = Number(prior[0]?.bal ?? 0);
     // Month income/expense from the actual full month (regardless of filter)
-    const { data: monthRows } = await supabase
-      .from('ledger_entries')
-      .select('income_cash, income_kpay, expense_cash, expense_kpay')
-      .gte('entry_date', monthStartIso).lt('entry_date', monthEndIso);
-    monthIncome  = (monthRows ?? []).reduce((s, r) => s + Number(r.income_cash ?? 0) + Number(r.income_kpay ?? 0), 0);
-    monthExpense = (monthRows ?? []).reduce((s, r) => s + Number(r.expense_cash ?? 0) + Number(r.expense_kpay ?? 0), 0);
+    const mrow = await sql`select coalesce(sum(income_cash + income_kpay), 0)::bigint as inc,
+      coalesce(sum(expense_cash + expense_kpay), 0)::bigint as exp
+      from ledger_entries where entry_date >= ${monthStartIso} and entry_date < ${monthEndIso}`;
+    monthIncome  = Number(mrow[0]?.inc ?? 0);
+    monthExpense = Number(mrow[0]?.exp ?? 0);
   }
   const closingBalance = openingBalance + monthIncome - monthExpense;
 
-  let query = supabase
-    .from('ledger_entries')
-    .select('id, entry_date, description, source, income_cash, income_kpay, expense_cash, expense_kpay, qty, product_id, account:chart_of_accounts(group_name, category), product:products(id, name, kind)', { count: 'exact' })
-    .order('entry_date', { ascending: false })
-    .order('id', { ascending: false });
+  const monthCond  = monthValid ? sql`and e.entry_date >= ${monthStartIso} and e.entry_date < ${monthEndIso}` : sql``;
+  const acctCond   = account !== 'all' ? sql`and e.account_id = ${Number(account)}` : sql``;
+  const searchCond = q ? sql`and e.description ilike ${'%' + q + '%'}` : sql``;
 
-  if (monthValid) {
-    query = query.gte('entry_date', monthStartIso).lt('entry_date', monthEndIso);
-  }
-  if (account !== 'all') query = query.eq('account_id', Number(account));
-  if (q) query = query.ilike('description', `%${q}%`);
-
-  const { data: entries, count } = await query.range(from, to);
+  const rows = (await sql`
+    select e.id, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, e.description, e.source,
+           e.income_cash, e.income_kpay, e.expense_cash, e.expense_kpay, e.qty, e.product_id,
+           json_build_object('group_name', coa.group_name, 'category', coa.category) as account,
+           case when p.id is null then null else json_build_object('id', p.id, 'name', p.name, 'kind', p.kind) end as product,
+           count(*) over()::int as full_count
+    from ledger_entries e
+    left join chart_of_accounts coa on coa.id = e.account_id
+    left join products p on p.id = e.product_id
+    where true ${monthCond} ${acctCond} ${searchCond}
+    order by e.entry_date desc, e.id desc
+    limit ${pageSize} offset ${from}
+  `) as unknown as Array<{
+    id: number; entry_date: string; description: string | null; source: string | null;
+    income_cash: number; income_kpay: number; expense_cash: number; expense_kpay: number;
+    qty: number | null; product_id: number | null;
+    account: { group_name: string; category: string } | null;
+    product: { id: number; name: string; kind: string } | null;
+    full_count: number;
+  }>;
+  const entries = rows;
+  const count = rows[0]?.full_count ?? 0;
   const totIncome  = (entries ?? []).reduce((s, e) => s + Number(e.income_cash ?? 0) + Number(e.income_kpay ?? 0), 0);
   const totExpense = (entries ?? []).reduce((s, e) => s + Number(e.expense_cash ?? 0) + Number(e.expense_kpay ?? 0), 0);
 

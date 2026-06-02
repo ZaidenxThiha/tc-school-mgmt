@@ -1,30 +1,30 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('fee_schedule').insert({
-    level_id: Number(formData.get('level_id')),
-    effective_from: String(formData.get('effective_from') ?? ''),
-    effective_to:   String(formData.get('effective_to') ?? '') || null,
-    class_fee:    Number(formData.get('class_fee') ?? 0),
-    textbook_fee: Number(formData.get('textbook_fee') ?? 0),
-    tshirt_fee:   Number(formData.get('tshirt_fee') ?? 0),
-    id_card_fee:  Number(formData.get('id_card_fee') ?? 0),
-    guide_fee:    Number(formData.get('guide_fee') ?? 0),
-    default_discount: Number(formData.get('default_discount') ?? 0),
-    notes: String(formData.get('notes') ?? '').trim() || null,
-  });
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_ADMIN);
+  await sql`insert into fee_schedule
+    (level_id, effective_from, effective_to, class_fee, textbook_fee, tshirt_fee, id_card_fee, guide_fee, default_discount, notes)
+    values (
+      ${Number(formData.get('level_id'))},
+      ${String(formData.get('effective_from') ?? '')},
+      ${String(formData.get('effective_to') ?? '') || null},
+      ${Number(formData.get('class_fee') ?? 0)},
+      ${Number(formData.get('textbook_fee') ?? 0)},
+      ${Number(formData.get('tshirt_fee') ?? 0)},
+      ${Number(formData.get('id_card_fee') ?? 0)},
+      ${Number(formData.get('guide_fee') ?? 0)},
+      ${Number(formData.get('default_discount') ?? 0)},
+      ${String(formData.get('notes') ?? '').trim() || null})`;
   redirect('/settings');
 }
 
 export default async function NewFee() {
-  const supabase = await createClient();
-  const { data: levels } = await supabase.from('levels').select('id, name').order('display_order');
+  const levels = (await sql`select id, name from levels order by display_order`) as unknown as { id: number; name: string }[];
   return (
     <div className="page-narrow max-w-2xl">
       <PageHeader title="Add fee row" subtitle="Multi-period price book" />

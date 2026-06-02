@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 import { mmk, shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -9,28 +10,29 @@ import { deleteRow } from '@/lib/actions';
 
 async function addItem(eventId: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
-  const { error } = await supabase.from('event_budget_items').insert({
-    event_id: eventId,
-    item: String(formData.get('item') ?? '').trim(),
-    qty: Number(formData.get('qty') ?? 0) || null,
-    unit_price: Number(formData.get('unit_price') ?? 0) || null,
-    amount: Number(formData.get('amount') ?? 0) || null,
-    supplier_name: String(formData.get('supplier_name') ?? '').trim() || null,
-    is_estimate: formData.get('is_estimate') === 'on',
-  });
-  if (error) throw new Error(error.message);
+  await requireRole(WRITE_FINANCE);
+  await sql`insert into event_budget_items (event_id, item, qty, unit_price, amount, supplier_name, is_estimate) values (
+    ${eventId},
+    ${String(formData.get('item') ?? '').trim()},
+    ${Number(formData.get('qty') ?? 0) || null},
+    ${Number(formData.get('unit_price') ?? 0) || null},
+    ${Number(formData.get('amount') ?? 0) || null},
+    ${String(formData.get('supplier_name') ?? '').trim() || null},
+    ${formData.get('is_estimate') === 'on'})`;
   redirect(`/events/${eventId}`);
 }
 
 export default async function EventDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: ev }, { data: items }] = await Promise.all([
-    supabase.from('events').select('*').eq('id', id).single(),
-    supabase.from('event_budget_items').select('*').eq('event_id', id).order('id'),
-  ]);
+  const [evRows, items] = await Promise.all([
+    sql`select id, name, to_char(event_date, 'YYYY-MM-DD') as event_date, budget, actual_cost from events where id = ${id}`,
+    sql`select * from event_budget_items where event_id = ${id} order by id`,
+  ]) as unknown as [
+    { id: number; name: string; event_date: string | null; budget: number | null; actual_cost: number | null }[],
+    Array<{ id: number; item: string; qty: number | null; unit_price: number | null; amount: number | null; supplier_name: string | null; is_estimate: boolean }>,
+  ];
+  const ev = evRows[0];
   if (!ev) notFound();
   const action = addItem.bind(null, id);
   const totalEstimated = (items ?? []).reduce((s, i) => s + Number(i.amount ?? 0), 0);

@@ -1,41 +1,51 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
 import PageHeader from '@/components/page-header';
 
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_FINANCE);
   const productId = formData.get('product_id') ? Number(formData.get('product_id')) : null;
   const qty = formData.get('qty') ? Number(formData.get('qty')) : null;
   const unit = formData.get('unit_price') ? Number(formData.get('unit_price')) : null;
-  const { error } = await supabase.from('ledger_entries').update({
-    entry_date: String(formData.get('entry_date') ?? ''),
-    description: String(formData.get('description') ?? '').trim() || null,
-    account_id: Number(formData.get('account_id')),
-    income_cash:  Number(formData.get('income_cash') ?? 0),
-    income_kpay:  Number(formData.get('income_kpay') ?? 0),
-    expense_cash: Number(formData.get('expense_cash') ?? 0),
-    expense_kpay: Number(formData.get('expense_kpay') ?? 0),
-    product_id: productId,
-    qty, unit_price: unit,
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await sql`update ledger_entries set
+    entry_date = ${String(formData.get('entry_date') ?? '')},
+    description = ${String(formData.get('description') ?? '').trim() || null},
+    account_id = ${Number(formData.get('account_id'))},
+    income_cash = ${Number(formData.get('income_cash') ?? 0)},
+    income_kpay = ${Number(formData.get('income_kpay') ?? 0)},
+    expense_cash = ${Number(formData.get('expense_cash') ?? 0)},
+    expense_kpay = ${Number(formData.get('expense_kpay') ?? 0)},
+    product_id = ${productId}, qty = ${qty}, unit_price = ${unit}
+    where id = ${id}`;
   redirect('/expenses');
 }
 
 export default async function EditExpense({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: e }, { data: accts }, { data: products }] = await Promise.all([
-    supabase.from('ledger_entries').select('*, product:products(id, name, kind, size)').eq('id', id).single(),
-    supabase.from('chart_of_accounts').select('id, group_name, category').order('category').order('group_name'),
-    supabase.from('products').select('id, kind, name, size').eq('is_active', true).order('kind').order('name'),
-  ]);
+  const [eRows, accts, products] = await Promise.all([
+    sql`select e.*, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date,
+          case when p.id is null then null else json_build_object('id', p.id, 'name', p.name, 'kind', p.kind, 'size', p.size) end as product
+        from ledger_entries e left join products p on p.id = e.product_id where e.id = ${id}`,
+    sql`select id, group_name, category from chart_of_accounts order by category, group_name`,
+    sql`select id, kind, name, size from products where is_active = true order by kind, name`,
+  ]) as unknown as [
+    Array<Record<string, unknown> & { product: { id: number; name: string; kind: string; size: string | null } | null }>,
+    { id: number; group_name: string; category: string }[],
+    { id: number; kind: string; name: string; size: string | null }[],
+  ];
+  const e = eRows[0] as (Record<string, unknown> & {
+    entry_date: string; description: string | null; account_id: number | null;
+    income_cash: number; income_kpay: number; expense_cash: number; expense_kpay: number;
+    product_id: number | null; qty: number | null; unit_price: number | null;
+    product: { id: number; name: string; kind: string; size: string | null } | null;
+  }) | undefined;
   if (!e) notFound();
   const action = save.bind(null, id);
-  const linkedProduct = e.product as unknown as { id: number; name: string; kind: string; size: string | null } | null;
+  const linkedProduct = e.product;
   return (
     <div className="page-narrow">
       <PageHeader title={`Edit ledger entry #${id}`} />

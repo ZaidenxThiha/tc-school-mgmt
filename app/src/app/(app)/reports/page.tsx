@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import PLChart from '@/components/pl-chart';
 import { mmk, monthLabel } from '@/lib/format';
@@ -10,73 +10,56 @@ export default async function ReportsPage({
   const sp = await searchParams;
   const year = Number(sp.year ?? new Date().getUTCFullYear());
 
-  const supabase = await createClient();
-  const yearStart = new Date(Date.UTC(year, 0, 1)).toISOString();
-  const yearEnd   = new Date(Date.UTC(year + 1, 0, 1)).toISOString();
+  const yearStart = `${year}-01-01`;
+  const yearEnd   = `${year + 1}-01-01`;
 
-  const [{ data: pl }, { data: expByAcct }, { data: incByLevel }, { data: noSectionLines }, { data: allLines }] = await Promise.all([
-    supabase.from('v_monthly_pl').select('month,income,expense,net').gte('month', yearStart).lt('month', yearEnd).order('month'),
-    supabase.from('ledger_entries')
-      .select('expense_cash, expense_kpay, account:chart_of_accounts(group_name, category)')
-      .gte('entry_date', yearStart.slice(0,10)).lt('entry_date', yearEnd.slice(0,10)),
-    supabase.from('invoices').select('id, total_amount, billing_month, section_id, section:sections(level:levels(code, name))').gte('billing_month', yearStart.slice(0,10)).lt('billing_month', yearEnd.slice(0,10)).eq('status', 'paid').limit(5000),
-    supabase.from('invoice_lines')
-      .select('amount, kind, invoice:invoices!inner(id, billing_month, section_id, status)')
-      .is('invoice.section_id', null)
-      .eq('invoice.status', 'paid')
-      .gte('invoice.billing_month', yearStart.slice(0,10))
-      .lt('invoice.billing_month', yearEnd.slice(0,10))
-      .limit(5000),
-    // Every paid invoice line in the year — grouped by kind
-    supabase.from('invoice_lines')
-      .select('amount, kind, invoice:invoices!inner(billing_month, status)')
-      .eq('invoice.status', 'paid')
-      .gte('invoice.billing_month', yearStart.slice(0,10))
-      .lt('invoice.billing_month', yearEnd.slice(0,10))
-      .limit(20000),
-  ]);
+  const [pl, expAcctRows, levelSectionRows, noSectionRows, kindRows] = await Promise.all([
+    sql`select to_char(month, 'YYYY-MM-DD') as month, income, expense, net
+        from v_monthly_pl where month >= ${yearStart} and month < ${yearEnd} order by month`,
+    sql`select coalesce(coa.group_name, '(uncategorized)') as k,
+          sum(e.expense_cash + e.expense_kpay)::bigint as v
+        from ledger_entries e left join chart_of_accounts coa on coa.id = e.account_id
+        where e.entry_date >= ${yearStart} and e.entry_date < ${yearEnd}
+        group by 1 having sum(e.expense_cash + e.expense_kpay) > 0 order by v desc`,
+    sql`select coalesce(l.name, '(unassigned section)') as k, sum(i.total_amount)::bigint as v
+        from invoices i join sections s on s.id = i.section_id join levels l on l.id = s.level_id
+        where i.status = 'paid' and i.section_id is not null
+          and i.billing_month >= ${yearStart} and i.billing_month < ${yearEnd}
+        group by 1`,
+    sql`with inv as (
+          select il.invoice_id, sum(il.amount) as total,
+            bool_or(il.kind = 'guide') as has_guide,
+            bool_or(il.kind = 'book') as has_book,
+            bool_or(il.kind = 'class_fee') as has_class
+          from invoice_lines il join invoices i on i.id = il.invoice_id
+          where i.status = 'paid' and i.section_id is null
+            and i.billing_month >= ${yearStart} and i.billing_month < ${yearEnd}
+          group by il.invoice_id)
+        select case when has_guide then 'Guide Class'
+                    when has_book and not has_class then 'Book Fee from Students'
+                    when has_class then '(unassigned section)'
+                    else 'Other Student Fees' end as k,
+               sum(total)::bigint as v
+        from inv group by 1`,
+    sql`select il.kind, sum(il.amount)::bigint as v
+        from invoice_lines il join invoices i on i.id = il.invoice_id
+        where i.status = 'paid' and i.billing_month >= ${yearStart} and i.billing_month < ${yearEnd}
+        group by il.kind`,
+  ]) as unknown as [
+    { month: string; income: number; expense: number; net: number }[],
+    { k: string; v: number }[],
+    { k: string; v: number }[],
+    { k: string; v: number }[],
+    { kind: string; v: number }[],
+  ];
 
-  // Aggregate expense by account
-  const byAcct: Record<string, number> = {};
-  for (const r of expByAcct ?? []) {
-    const a = r.account as unknown as { group_name: string } | null;
-    const k = a?.group_name ?? '(uncategorized)';
-    byAcct[k] = (byAcct[k] ?? 0) + Number(r.expense_cash ?? 0) + Number(r.expense_kpay ?? 0);
-  }
-  const acctSorted = Object.entries(byAcct)
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1]);
+  const acctSorted = expAcctRows.map((r) => [r.k, Number(r.v)] as [string, number]).sort((a, b) => b[1] - a[1]);
 
-  // Aggregate revenue by level — only invoices that ARE assigned to a section
+  // Revenue by level — section-based plus bucketed section-less fees
   const byLevel: Record<string, number> = {};
-  for (const r of incByLevel ?? []) {
-    if (!r.section_id) continue;
-    const sec = r.section as unknown as { level: { code: string; name: string } | null } | null;
-    const k = sec?.level?.name ?? '(unassigned section)';
-    byLevel[k] = (byLevel[k] ?? 0) + Number(r.total_amount ?? 0);
-  }
-
-  // Bucket section-less invoice lines into Guide / Book / Other student fees
-  const linesByInv: Map<number, { kind: string; amount: number }[]> = new Map();
-  for (const r of noSectionLines ?? []) {
-    const inv = r.invoice as unknown as { id: number } | null;
-    if (!inv) continue;
-    if (!linesByInv.has(inv.id)) linesByInv.set(inv.id, []);
-    linesByInv.get(inv.id)!.push({ kind: r.kind as string, amount: Number(r.amount ?? 0) });
-  }
-  for (const [, lines] of linesByInv) {
-    const kinds = new Set(lines.map((l) => l.kind));
-    const total = lines.reduce((s, l) => s + l.amount, 0);
-    let cat = 'Other Student Fees';
-    if (kinds.has('guide')) cat = 'Guide Class';
-    else if (kinds.has('book') && !kinds.has('class_fee')) cat = 'Book Fee from Students';
-    else if (kinds.has('class_fee')) cat = '(unassigned section)';
-    byLevel[cat] = (byLevel[cat] ?? 0) + total;
-  }
-
-  const levelSorted = Object.entries(byLevel)
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1]);
+  for (const r of levelSectionRows) byLevel[r.k] = (byLevel[r.k] ?? 0) + Number(r.v);
+  for (const r of noSectionRows) byLevel[r.k] = (byLevel[r.k] ?? 0) + Number(r.v);
+  const levelSorted = Object.entries(byLevel).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 
   // Revenue by fee type (every paid invoice line in the year)
   const KIND_LABEL: Record<string, string> = {
@@ -90,9 +73,9 @@ export default async function ReportsPage({
     other:     'Other',
   };
   const byKind: Record<string, number> = {};
-  for (const r of allLines ?? []) {
-    const k = KIND_LABEL[r.kind as string] ?? (r.kind as string);
-    byKind[k] = (byKind[k] ?? 0) + Number(r.amount ?? 0);
+  for (const r of kindRows) {
+    const k = KIND_LABEL[r.kind] ?? r.kind;
+    byKind[k] = (byKind[k] ?? 0) + Number(r.v);
   }
   const kindSorted = Object.entries(byKind)
     .filter(([, v]) => v !== 0)
