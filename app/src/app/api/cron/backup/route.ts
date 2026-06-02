@@ -1,10 +1,11 @@
 import { createBackup, getFrequency } from '@/lib/backup';
 
 // Auto-backup endpoint hit by Vercel Cron (see vercel.json). The cron fires
-// hourly; this route decides whether to actually snapshot based on the
-// owner-configured frequency in app_settings:
+// daily at 02:00 UTC (the Hobby plan's max frequency; bump vercel.json to
+// "0 * * * *" on Pro for true hourly). This route then decides whether to
+// snapshot based on the owner-configured frequency in app_settings:
 //   hourly → every run · daily → 02:00 UTC · weekly → Sunday 02:00 UTC
-// (02:00 UTC ≈ 08:30 Asia/Yangon.)
+// (02:00 UTC ≈ 08:30 Asia/Yangon.) On Hobby, "hourly" effectively runs daily.
 //
 // Protected by CRON_SECRET: Vercel sends `Authorization: Bearer <CRON_SECRET>`
 // when the env var is set. Requests without it are rejected.
