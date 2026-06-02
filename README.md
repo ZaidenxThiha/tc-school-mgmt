@@ -56,3 +56,4 @@ Hosted on **Vercel** with GitHub auto-deploy: every push to `main` builds from `
 and deploys to https://tncengcenter.vercel.app. Preview deployments are created per branch.
 
 Required Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+
