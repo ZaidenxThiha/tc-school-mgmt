@@ -2,40 +2,38 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { Clock, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { getFrequencyAction, setFrequencyAction } from '@/lib/actions/backup';
+import type { Frequency } from '@/lib/backup';
 
-const LABEL: Record<string, string> = {
+const LABEL: Record<Frequency, string> = {
   daily:  'Daily — 02:00 UTC (08:30 Mandalay)',
   weekly: 'Weekly — Sunday 02:00 UTC',
   hourly: 'Hourly — top of every hour',
 };
 
 export default function BackupSchedule() {
-  const supabase = createClient();
-  const [freq, setFreq] = useState<'daily' | 'weekly' | 'hourly'>('daily');
-  const [cron, setCron] = useState<string>('—');
+  const [freq, setFreq] = useState<Frequency>('daily');
   const [busy, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   async function load() {
-    const { data, error } = await supabase.rpc('get_backup_schedule');
-    if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-    const row = (data as { frequency: string; cron_expr: string | null }[] | null)?.[0];
-    if (row) {
-      setFreq(((row.frequency || 'daily') as 'daily' | 'weekly' | 'hourly'));
-      setCron(row.cron_expr ?? '— (no job)');
+    try {
+      setFreq(await getFrequencyAction());
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
     }
   }
   useEffect(() => { load(); }, []);
 
-  async function save(newFreq: 'daily' | 'weekly' | 'hourly') {
+  function save(newFreq: Frequency) {
     setMsg(null);
     start(async () => {
-      const { data, error } = await supabase.rpc('set_backup_schedule', { freq: newFreq });
-      if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-      setFreq(newFreq);
-      setCron(data as string);
-      setMsg({ kind: 'ok', text: `Schedule set to ${LABEL[newFreq]}.` });
+      try {
+        setFreq(await setFrequencyAction(newFreq));
+        setMsg({ kind: 'ok', text: `Schedule set to ${LABEL[newFreq]}.` });
+      } catch (e) {
+        setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      }
     });
   }
 
@@ -48,10 +46,10 @@ export default function BackupSchedule() {
       </div>
       <div className="text-xs text-slate-500 mb-3">
         Current: <span className="font-medium text-slate-800">{LABEL[freq]}</span>
-        <span className="ml-2 font-mono text-slate-500">({cron})</span>
+        <span className="ml-2 text-slate-400">· runs via Vercel Cron</span>
       </div>
       <div className="grid grid-cols-3 gap-2 max-w-md">
-        {(['daily','weekly','hourly'] as const).map((f) => (
+        {(['daily', 'weekly', 'hourly'] as const).map((f) => (
           <button
             key={f}
             onClick={() => save(f)}

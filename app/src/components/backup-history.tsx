@@ -2,74 +2,75 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { Download, RotateCcw, Trash2, Loader2, RefreshCcw, Plus } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import {
+  listBackupsAction,
+  createBackupAction,
+  deleteBackupAction,
+  restoreFromBackupAction,
+} from '@/lib/actions/backup';
+import type { BackupRow } from '@/lib/backup';
 
 const RESTORE_PASSWORD = 'admin123';
 
-type Row = {
-  id: number; source: 'auto' | 'manual'; row_count: number;
-  size_bytes: number; notes: string | null; created_at: string;
-};
-
 export default function BackupHistory() {
-  const supabase = createClient();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<BackupRow[]>([]);
   const [busy, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   async function refresh() {
     setMsg(null);
-    const { data, error } = await supabase.rpc('list_backups');
-    if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-    setRows((data as Row[]) ?? []);
+    try {
+      setRows(await listBackupsAction());
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    }
   }
   useEffect(() => { refresh(); }, []);
 
-  async function downloadById(id: number) {
-    setMsg(null);
-    start(async () => {
-      const { data, error } = await supabase.rpc('get_backup', { backup_id: id });
-      if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-      a.href = url; a.download = `tnc-backup-${id}-${ts}.json`; a.click();
-      URL.revokeObjectURL(url);
-    });
+  function downloadById(id: number) {
+    // Stored payloads are large — stream them from the route as a file download.
+    window.location.href = `/api/backup/${id}`;
   }
 
-  async function restoreById(id: number) {
+  function restoreById(id: number) {
     const pw = window.prompt('Enter restore password to confirm. This truncates every table first.');
     if (pw !== RESTORE_PASSWORD) { setMsg({ kind: 'err', text: 'Wrong password.' }); return; }
     setMsg(null);
     start(async () => {
-      const { data, error } = await supabase.rpc('restore_from_backup', { backup_id: id });
-      if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-      setMsg({ kind: 'ok', text: `Restored ${(data as number ?? 0).toLocaleString()} rows from backup #${id}.` });
-      await refresh();
+      try {
+        const n = await restoreFromBackupAction(id);
+        setMsg({ kind: 'ok', text: `Restored ${Number(n).toLocaleString()} rows from backup #${id}.` });
+        await refresh();
+      } catch (e) {
+        setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      }
     });
   }
 
-  async function deleteById(id: number) {
+  function deleteById(id: number) {
     if (!window.confirm(`Delete backup #${id}?`)) return;
     setMsg(null);
     start(async () => {
-      const { error } = await supabase.rpc('delete_backup', { backup_id: id });
-      if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-      setMsg({ kind: 'ok', text: `Deleted backup #${id}.` });
-      await refresh();
+      try {
+        await deleteBackupAction(id);
+        setMsg({ kind: 'ok', text: `Deleted backup #${id}.` });
+        await refresh();
+      } catch (e) {
+        setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      }
     });
   }
 
-  async function backupNow() {
+  function backupNow() {
     setMsg(null);
     start(async () => {
-      const { data, error } = await supabase.rpc('create_backup', { source_label: 'manual', note: 'manual via UI' });
-      if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-      setMsg({ kind: 'ok', text: `Backup #${data} created.` });
-      await refresh();
+      try {
+        const id = await createBackupAction('manual via UI');
+        setMsg({ kind: 'ok', text: `Backup #${id} created.` });
+        await refresh();
+      } catch (e) {
+        setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      }
     });
   }
 
@@ -78,7 +79,7 @@ export default function BackupHistory() {
       <div className="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
         <div>
           <div className="font-semibold">Backup history</div>
-          <div className="text-xs text-slate-500">Auto-snapshot daily at 02:00 UTC (08:30 Mandalay) · last 30 auto + 50 manual kept</div>
+          <div className="text-xs text-slate-500">Auto-snapshot per schedule below · last 30 auto + 50 manual kept</div>
         </div>
         <div className="flex gap-2">
           <button onClick={refresh} disabled={busy} className="btn-ghost text-xs inline-flex items-center gap-1">

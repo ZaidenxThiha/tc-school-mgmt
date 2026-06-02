@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { auth } from '@/auth';
 import PageHeader from '@/components/page-header';
 import BackupActions from '@/components/backup-actions';
 import BackupHistory from '@/components/backup-history';
@@ -6,9 +7,8 @@ import BackupSchedule from '@/components/backup-schedule';
 
 
 export default async function BackupPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const role = (user?.app_metadata?.role as string | undefined) ?? 'readonly';
+  const session = await auth();
+  const role = (session?.user as { role?: string } | undefined)?.role ?? 'readonly';
   if (role !== 'owner') {
     return (
       <div className="page-narrow">
@@ -18,12 +18,12 @@ export default async function BackupPage() {
     );
   }
 
-  // Quick row count snapshot for context
-  const tables = ['students','employees','payments','invoices','ledger_entries','schedule_assignments','employee_payslips'];
-  const counts = await Promise.all(tables.map(async (t) => {
-    const { count } = await supabase.from(t).select('id', { count: 'exact', head: true });
-    return [t, count ?? 0] as const;
-  }));
+  // Quick row count snapshot for context.
+  const tables = ['students', 'employees', 'payments', 'invoices', 'ledger_entries', 'schedule_assignments', 'employee_payslips'];
+  const rows = (await sql.unsafe(
+    tables.map((t, i) => `select '${t}' as t, count(*)::int as n from ${t}${i < tables.length - 1 ? ' union all ' : ''}`).join('')
+  )) as unknown as { t: string; n: number }[];
+  const counts = tables.map((t) => [t, rows.find((r) => r.t === t)?.n ?? 0] as const);
 
   return (
     <div className="page max-w-3xl">
@@ -51,15 +51,16 @@ export default async function BackupPage() {
       <div className="card mt-4 text-xs text-slate-600 space-y-2">
         <div className="font-medium text-slate-800">What's in a backup file</div>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>Every row from every public-schema table (~30 tables)</li>
+          <li>Every row from every data table (~30 tables)</li>
           <li>JSON format with version, timestamp, total row count</li>
           <li>Includes seed data (levels, chart of accounts) — safe to restore as-is</li>
-          <li>Excludes <code>auth.users</code> — user accounts must be recreated separately</li>
+          <li>Excludes the <code>users</code> (login) table — accounts are managed separately</li>
         </ul>
         <div className="font-medium text-slate-800 mt-3">Restore behaviour</div>
         <ul className="list-disc list-inside space-y-0.5">
-          <li><strong>Truncates every table</strong> first, then re-inserts from the file</li>
-          <li>Triggers are paused during restore (faster, avoids cascading recompute)</li>
+          <li><strong>Truncates every data table</strong> first, then re-inserts from the file</li>
+          <li>Business triggers are paused during restore (faster, avoids cascading recompute)</li>
+          <li>Foreign keys are deferred and validated once at the end</li>
           <li>ID sequences are reset so future inserts continue cleanly</li>
           <li>Requires the password <code>admin123</code> to confirm</li>
         </ul>

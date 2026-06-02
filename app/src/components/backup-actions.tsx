@@ -2,12 +2,10 @@
 
 import { useState, useTransition } from 'react';
 import { Download, Upload, RotateCcw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 
 const RESTORE_PASSWORD = 'admin123';
 
 export default function BackupActions() {
-  const supabase = createClient();
   const [busy, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -17,38 +15,39 @@ export default function BackupActions() {
   function downloadBackup() {
     setMsg(null);
     start(async () => {
-      const { data, error } = await supabase.rpc('backup_all_data');
-      if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url  = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-      a.href = url;
-      a.download = `tnc-backup-${ts}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      const rows = (data as { row_count?: number } | null)?.row_count ?? 0;
-      setMsg({ kind: 'ok', text: `Backup downloaded — ${rows.toLocaleString()} rows.` });
+      try {
+        const res = await fetch('/api/backup/export');
+        if (!res.ok) throw new Error(await res.text());
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+        a.href = url;
+        a.download = `tnc-backup-${ts}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setMsg({ kind: 'ok', text: 'Backup downloaded.' });
+      } catch (e) {
+        setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      }
     });
   }
 
-  async function performRestore() {
+  function performRestore() {
     if (!file) { setMsg({ kind: 'err', text: 'Pick a backup file first.' }); return; }
     if (pw !== RESTORE_PASSWORD) { setMsg({ kind: 'err', text: 'Wrong restore password.' }); return; }
     setMsg(null);
     start(async () => {
       try {
-        const text = await file.text();
-        const payload = JSON.parse(text);
-        if (!payload.tables) throw new Error('Not a valid backup file (missing "tables").');
-        const { data, error } = await supabase.rpc('restore_all_data', { payload });
-        if (error) throw new Error(error.message);
-        setMsg({ kind: 'ok', text: `Restored ${(data as number ?? 0).toLocaleString()} rows. Refresh to see updates.` });
+        const form = new FormData();
+        form.set('file', file);
+        const res = await fetch('/api/backup/restore', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? 'Restore failed.');
+        setMsg({ kind: 'ok', text: `Restored ${Number(data.restored ?? 0).toLocaleString()} rows. Refresh to see updates.` });
         setRestoreOpen(false); setPw(''); setFile(null);
-      } catch (e: unknown) {
-        const m = e instanceof Error ? e.message : String(e);
-        setMsg({ kind: 'err', text: m });
+      } catch (e) {
+        setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
       }
     });
   }
@@ -58,7 +57,7 @@ export default function BackupActions() {
       <div className="card flex items-start gap-4 flex-wrap">
         <div className="flex-1 min-w-[220px]">
           <div className="font-semibold mb-1">Download backup</div>
-          <p className="text-xs text-slate-500">Generates a JSON file of every row in every table.</p>
+          <p className="text-xs text-slate-500">Generates a JSON file of every row in every data table.</p>
         </div>
         <button onClick={downloadBackup} disabled={busy} className="btn-primary inline-flex items-center gap-2">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
