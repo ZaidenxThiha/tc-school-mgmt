@@ -9,7 +9,9 @@ export const authConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const p = nextUrl.pathname;
-      const isPublic = p === '/login' || p.startsWith('/auth') || p.startsWith('/api/auth');
+      // /api/cron/* is gated by CRON_SECRET in the route itself (Vercel Cron
+      // sends a Bearer token, not a session cookie), so it bypasses the auth gate.
+      const isPublic = p === '/login' || p.startsWith('/auth') || p.startsWith('/api/auth') || p.startsWith('/api/cron');
       if (isPublic) return true;
       return isLoggedIn; // unauthenticated → redirected to /login
     },
