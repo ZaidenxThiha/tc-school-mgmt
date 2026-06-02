@@ -1,6 +1,5 @@
-import type { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 
-type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 type TeacherRole = 'MT' | 'CT';
 
 export type ConflictInput = {
@@ -39,29 +38,18 @@ function inputTeachers(input: ConflictInput) {
   ].filter((teacher): teacher is { employee_id: number; inputRole: TeacherRole } => teacher !== null);
 }
 
-export async function findTeacherConflicts(
-  supabase: SupabaseServerClient,
-  input: ConflictInput,
-): Promise<TeacherConflict[]> {
+export async function findTeacherConflicts(input: ConflictInput): Promise<TeacherConflict[]> {
   const teachers = inputTeachers(input);
   if (teachers.length === 0) return [];
 
-  let query = supabase
-    .from('schedule_assignments')
-    .select('id, mt_employee_id, ct_employee_id, class_label, subject, room_id')
-    .eq('day_of_week', input.day_of_week)
-    .eq('time_slot', input.time_slot);
+  const monthCond = input.month === null ? sql`and month is null` : sql`and month = ${input.month}`;
+  const excludeCond = input.excludeId !== undefined ? sql`and id <> ${input.excludeId}` : sql``;
 
-  query = input.month === null ? query.is('month', null) : query.eq('month', input.month);
-
-  if (input.excludeId !== undefined) {
-    query = query.neq('id', input.excludeId);
-  }
-
-  const { data, error } = await query;
-  if (error) throw new Error(`Check teacher conflicts: ${error.message}`);
-
-  const rows = (data ?? []) as ConflictRow[];
+  const rows = (await sql`
+    select id, mt_employee_id, ct_employee_id, class_label, subject, room_id
+    from schedule_assignments
+    where day_of_week = ${input.day_of_week} and time_slot = ${input.time_slot} ${monthCond} ${excludeCond}
+  `) as unknown as ConflictRow[];
   const conflicts: TeacherConflict[] = [];
   const seen = new Set<string>();
 
@@ -106,11 +94,10 @@ function formatConflict(conflict: TeacherConflict, input: ConflictInput, employe
 }
 
 export async function assertNoTeacherConflicts(
-  supabase: SupabaseServerClient,
   input: ConflictInput,
   employeeNames?: Map<number, string>,
 ): Promise<void> {
-  const conflicts = await findTeacherConflicts(supabase, input);
+  const conflicts = await findTeacherConflicts(input);
   if (conflicts.length === 0) return;
 
   throw new Error(conflicts.map((conflict) => formatConflict(conflict, input, employeeNames)).join('\n'));

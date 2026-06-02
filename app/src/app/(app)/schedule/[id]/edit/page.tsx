@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import { assertNoTeacherConflicts } from '@/lib/schedule-conflicts';
 import PageHeader from '@/components/page-header';
 
@@ -9,7 +10,7 @@ const DAYS  = ['Sat','Sun','Mon','Tue','Wed','Thu','Fri'] as const;
 
 async function save(id: number, formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const monthStr = String(formData.get('month') ?? '');
   const num = (k: string) => {
     const v = formData.get(k);
@@ -27,61 +28,41 @@ async function save(id: number, formData: FormData) {
 
   let employeeNames: Map<number, string> | undefined;
   if (mt !== null || ct !== null) {
-    const { data: employees, error: employeesError } = await supabase
-      .from('employees')
-      .select('id, short_name');
-    if (employeesError) throw new Error(employeesError.message);
-
-    employeeNames = new Map(
-      ((employees ?? []) as Array<{ id: number; short_name: string | null }>).map((employee) => [
-        employee.id,
-        employee.short_name ?? `#${employee.id}`,
-      ]),
-    );
+    const employees = await sql`select id, short_name from employees`;
+    employeeNames = new Map((employees as unknown as { id: number; short_name: string | null }[]).map((e) => [e.id, e.short_name ?? `#${e.id}`]));
   }
 
   await assertNoTeacherConflicts(
-    supabase,
-    {
-      month: monthIso,
-      day_of_week,
-      time_slot,
-      mt_employee_id: mt,
-      ct_employee_id: ct,
-      excludeId: id,
-    },
+    { month: monthIso, day_of_week, time_slot, mt_employee_id: mt, ct_employee_id: ct, excludeId: id },
     employeeNames,
   );
 
-  const { error } = await supabase.from('schedule_assignments').update({
-    month: monthIso,
-    day_of_week,
-    time_slot,
-    room_id:     num('room_id'),
-    section_id:  num('section_id'),
-    class_label: txt('class_label'),
-    subject:     txt('subject'),
-    mt_employee_id: mt,
-    ct_employee_id: ct,
-    notes: txt('notes'),
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
+  await sql`update schedule_assignments set
+      month = ${monthIso}, day_of_week = ${day_of_week}, time_slot = ${time_slot},
+      room_id = ${num('room_id')}, section_id = ${num('section_id')},
+      class_label = ${txt('class_label')}, subject = ${txt('subject')},
+      mt_employee_id = ${mt}, ct_employee_id = ${ct}, notes = ${txt('notes')}
+    where id = ${id}`;
   redirect(`/schedule?month=${monthStr}`);
 }
 
 export default async function EditAssignment({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const supabase = await createClient();
-  const [{ data: a }, { data: rooms }, { data: sections }, { data: employees }] = await Promise.all([
-    supabase.from('schedule_assignments').select('*').eq('id', id).single(),
-    supabase.from('rooms').select('id, name, display_name').order('id'),
-    supabase.from('sections').select('id, time_slot, is_online, level:levels(name)').order('id'),
-    supabase.from('employees').select('id, short_name, category').eq('is_active', true).order('short_name'),
+  const [aRows, rooms, sections, employees] = await Promise.all([
+    sql`select *, to_char(month, 'YYYY-MM') as month_str from schedule_assignments where id = ${id}`,
+    sql`select id, name, display_name from rooms order by id`,
+    sql`select s.id, s.time_slot, s.is_online, json_build_object('name', l.name) as level from sections s join levels l on l.id = s.level_id order by s.id`,
+    sql`select id, short_name, category from employees where is_active = true order by short_name`,
   ]);
+  const a = aRows[0] as unknown as {
+    day_of_week: string; time_slot: string; room_id: number | null; section_id: number | null;
+    class_label: string | null; subject: string | null; mt_employee_id: number | null; ct_employee_id: number | null;
+    notes: string | null; month_str: string;
+  } | undefined;
   if (!a) notFound();
   const action = save.bind(null, id);
-  const monthStr = (a.month as string).slice(0, 7);
+  const monthStr = a.month_str;
   return (
     <div className="page-narrow max-w-2xl">
       <PageHeader title={`Edit cell #${id}`} subtitle={`${a.day_of_week} · ${a.time_slot}`} />

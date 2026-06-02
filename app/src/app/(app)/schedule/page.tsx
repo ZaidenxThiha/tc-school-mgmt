@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
 import PageHeader from '@/components/page-header';
 import { copyFromPreviousMonth } from '@/lib/actions/schedule';
 import RoomGrid from './_components/room-grid';
@@ -32,19 +32,18 @@ export default async function SchedulePage({
   const copiedCount = sp.copied ? Number(sp.copied) : null;
   const copiedFrom = sp.from || null;
 
-  const supabase = await createClient();
-  const [{ data: rooms }, { data: assignments }, { data: employees }] = await Promise.all([
-    supabase.from('rooms').select('id, name, display_name').order('id'),
-    supabase.from('schedule_assignments')
-      .select(`
-        id, day_of_week, time_slot, class_label, subject,
-        room:rooms(id, name, display_name),
-        mt:employees!schedule_assignments_mt_employee_id_fkey(id, short_name),
-        ct:employees!schedule_assignments_ct_employee_id_fkey(id, short_name)
-      `)
-      .eq('month', monthIso)
-      .order('id'),
-    supabase.from('employees').select('id, short_name, category').eq('is_active', true).order('short_name'),
+  const [rooms, assignments, employees] = await Promise.all([
+    sql`select id, name, display_name from rooms order by id`,
+    sql`select a.id, a.day_of_week, a.time_slot, a.class_label, a.subject,
+          case when r.id is null then null else json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name) end as room,
+          case when mt.id is null then null else json_build_object('id', mt.id, 'short_name', mt.short_name) end as mt,
+          case when ct.id is null then null else json_build_object('id', ct.id, 'short_name', ct.short_name) end as ct
+        from schedule_assignments a
+        left join rooms r on r.id = a.room_id
+        left join employees mt on mt.id = a.mt_employee_id
+        left join employees ct on ct.id = a.ct_employee_id
+        where a.month = ${monthIso} order by a.id`,
+    sql`select id, short_name, category from employees where is_active = true order by short_name`,
   ]);
 
   const byRoom: Map<number | null, Map<string, Cell[]>> = new Map();

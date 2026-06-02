@@ -1,11 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import type { ParsedClass } from '@/lib/parse-timetable';
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-const normLevel = (s: string) => norm(s).replace(/s$/, ''); // tolerate plural ("Starters" → "starter")
+const normLevel = (s: string) => norm(s).replace(/s$/, '');
 
 export type ImportResult = {
   created: number;
@@ -14,27 +15,26 @@ export type ImportResult = {
   unmatchedRooms: string[];
 };
 
-// Maps parsed timetable rows to IDs and replaces the target month's schedule.
 export async function importTimetable(monthStr: string, classes: ParsedClass[]): Promise<ImportResult> {
   if (!/^\d{4}-\d{2}$/.test(monthStr)) throw new Error('Invalid month (expected YYYY-MM)');
   if (!Array.isArray(classes) || classes.length === 0) throw new Error('Nothing to import');
+  await requireRole(WRITE_ADMIN);
   const month = `${monthStr}-01`;
-  const supabase = await createClient();
 
-  const [{ data: emps }, { data: rooms }, { data: sections }] = await Promise.all([
-    supabase.from('employees').select('id, short_name'),
-    supabase.from('rooms').select('id, name'),
-    supabase.from('sections').select('id, time_slot, is_online, level:levels(name)'),
+  const [emps, rooms, sections] = await Promise.all([
+    sql`select id, short_name from employees`,
+    sql`select id, name from rooms`,
+    sql`select s.id, s.time_slot, s.is_online, l.name as level from sections s join levels l on l.id = s.level_id`,
   ]);
 
   const empMap = new Map<string, number>();
-  for (const e of emps ?? []) if (e.short_name) empMap.set(norm(e.short_name), e.id);
+  for (const e of emps as unknown as { id: number; short_name: string | null }[]) if (e.short_name) empMap.set(norm(e.short_name), e.id);
   const roomMap = new Map<string, number>();
-  for (const r of rooms ?? []) roomMap.set(norm(r.name), r.id);
+  for (const r of rooms as unknown as { id: number; name: string }[]) roomMap.set(norm(r.name), r.id);
   const secExact = new Map<string, number>();
   const secAny = new Map<string, number>();
-  for (const s of sections ?? []) {
-    const ln = normLevel((s.level as unknown as { name: string } | null)?.name ?? '');
+  for (const s of sections as unknown as { id: number; time_slot: string; is_online: boolean; level: string }[]) {
+    const ln = normLevel(s.level ?? '');
     if (!secAny.has(`${ln}|${s.time_slot}`)) secAny.set(`${ln}|${s.time_slot}`, s.id);
     secExact.set(`${ln}|${s.time_slot}|${s.is_online}`, s.id);
   }
@@ -56,11 +56,8 @@ export async function importTimetable(monthStr: string, classes: ParsedClass[]):
     };
   });
 
-  // Replace the month's schedule so re-importing is idempotent.
-  const { error: delErr } = await supabase.from('schedule_assignments').delete().eq('month', month);
-  if (delErr) throw new Error(delErr.message);
-  const { error } = await supabase.from('schedule_assignments').insert(inserts);
-  if (error) throw new Error(error.message);
+  await sql`delete from schedule_assignments where month = ${month}`;
+  if (inserts.length) await sql`insert into schedule_assignments ${sql(inserts)}`;
 
   revalidatePath('/schedule');
   return {

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { sql } from '@/lib/db';
+import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
 import { assertNoTeacherConflicts } from '@/lib/schedule-conflicts';
 import PageHeader from '@/components/page-header';
 import StudentCombobox from '@/components/student-combobox';
@@ -10,7 +11,7 @@ const DAYS  = ['Sat','Sun','Mon','Tue','Wed','Thu','Fri'] as const;
 
 async function create(formData: FormData) {
   'use server';
-  const supabase = await createClient();
+  await requireRole(WRITE_ADMIN);
   const monthStr = String(formData.get('month') ?? '');
   const monthIso = monthStr ? `${monthStr}-01` : null;
   const num = (k: string) => {
@@ -28,44 +29,17 @@ async function create(formData: FormData) {
 
   let employeeNames: Map<number, string> | undefined;
   if (mt !== null || ct !== null) {
-    const { data: employees, error: employeesError } = await supabase
-      .from('employees')
-      .select('id, short_name');
-    if (employeesError) throw new Error(employeesError.message);
-
-    employeeNames = new Map(
-      ((employees ?? []) as Array<{ id: number; short_name: string | null }>).map((employee) => [
-        employee.id,
-        employee.short_name ?? `#${employee.id}`,
-      ]),
-    );
+    const employees = await sql`select id, short_name from employees`;
+    employeeNames = new Map((employees as unknown as { id: number; short_name: string | null }[]).map((e) => [e.id, e.short_name ?? `#${e.id}`]));
   }
 
   await assertNoTeacherConflicts(
-    supabase,
-    {
-      month: monthIso,
-      day_of_week,
-      time_slot,
-      mt_employee_id: mt,
-      ct_employee_id: ct,
-    },
+    { month: monthIso, day_of_week, time_slot, mt_employee_id: mt, ct_employee_id: ct },
     employeeNames,
   );
 
-  const { error } = await supabase.from('schedule_assignments').insert({
-    month: monthIso,
-    day_of_week,
-    time_slot,
-    room_id:     num('room_id'),
-    section_id:  num('section_id'),
-    class_label: txt('class_label'),
-    subject:     txt('subject'),
-    mt_employee_id: mt,
-    ct_employee_id: ct,
-    notes: txt('notes'),
-  });
-  if (error) throw new Error(error.message);
+  await sql`insert into schedule_assignments (month, day_of_week, time_slot, room_id, section_id, class_label, subject, mt_employee_id, ct_employee_id, notes)
+    values (${monthIso}, ${day_of_week}, ${time_slot}, ${num('room_id')}, ${num('section_id')}, ${txt('class_label')}, ${txt('subject')}, ${mt}, ${ct}, ${txt('notes')})`;
   redirect(`/schedule?month=${monthStr}`);
 }
 
@@ -73,12 +47,15 @@ export default async function NewAssignment({
   searchParams,
 }: { searchParams: Promise<{ month?: string; room?: string; day?: string; slot?: string }> }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const [{ data: rooms }, { data: sections }, { data: employees }] = await Promise.all([
-    supabase.from('rooms').select('id, name, display_name').order('id'),
-    supabase.from('sections').select('id, time_slot, is_online, level:levels(name, code)').order('id'),
-    supabase.from('employees').select('id, short_name, category').eq('is_active', true).order('short_name'),
-  ]);
+  const [rooms, sections, employees] = await Promise.all([
+    sql`select id, name, display_name from rooms order by id`,
+    sql`select s.id, s.time_slot, s.is_online, json_build_object('name', l.name, 'code', l.code) as level from sections s join levels l on l.id = s.level_id order by s.id`,
+    sql`select id, short_name, category from employees where is_active = true order by short_name`,
+  ]) as unknown as [
+    { id: number; name: string; display_name: string | null }[],
+    { id: number; time_slot: string; is_online: boolean; level: { name: string } | null }[],
+    { id: number; short_name: string | null }[],
+  ];
   return (
     <div className="page-narrow max-w-2xl">
       <PageHeader title="Add schedule cell" />
