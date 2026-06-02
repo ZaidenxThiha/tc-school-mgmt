@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { revalidateTag } from 'next/cache';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
+import { reqId } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -10,7 +11,7 @@ async function save(id: number, formData: FormData) {
   await requireRole(WRITE_ADMIN);
   const cap = formData.get('capacity');
   await sql`update sections set
-      level_id = ${Number(formData.get('level_id'))},
+      level_id = ${reqId(formData, 'level_id')},
       time_slot = ${String(formData.get('time_slot') ?? '').trim()},
       is_online = ${formData.get('is_online') === 'on'},
       capacity = ${cap ? Number(cap) : null}

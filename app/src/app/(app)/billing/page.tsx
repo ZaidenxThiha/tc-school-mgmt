@@ -21,12 +21,20 @@ async function generateInvoices(formData: FormData) {
   redirect(`/billing?month=${monthStr}&generated=${r[0]?.n ?? 0}`);
 }
 
-// Undo a Generate: delete the month's OPEN (unpaid) invoices (line items cascade).
+// Undo a Generate: delete the month's untouched OPEN invoices (line items
+// cascade). Skip any open invoice that already has payments (partially paid) or
+// inventory movements (book/T-shirt issued) — both FKs are NO ACTION, so those
+// must be kept rather than blowing up the delete.
 async function deleteGeneratedInvoices(monthStr: string) {
   'use server';
   if (!/^\d{4}-\d{2}$/.test(monthStr)) return;
   await requireRole(WRITE_FINANCE);
-  const removed = await sql`delete from invoices where billing_month = ${`${monthStr}-01`} and status = 'open' returning id`;
+  const removed = await sql`
+    delete from invoices i
+    where i.billing_month = ${`${monthStr}-01`} and i.status = 'open'
+      and not exists (select 1 from payments p where p.invoice_id = i.id)
+      and not exists (select 1 from inventory_movements im where im.related_invoice_id = i.id)
+    returning i.id`;
   revalidatePath('/billing');
   redirect(`/billing?month=${monthStr}&deleted=${removed.length}`);
 }
@@ -46,8 +54,9 @@ export default async function BillingPage({
   const defaultMonth = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`;
   const month = (sp.month && /^\d{4}-\d{2}$/.test(sp.month)) ? sp.month : defaultMonth;
   const monthIso = `${month}-01`;
-  const generated = sp.generated ? Number(sp.generated) : null;
-  const deleted = sp.deleted ? Number(sp.deleted) : null;
+  const toCount = (v?: string) => (v && Number.isFinite(Number(v)) ? Number(v) : null);
+  const generated = toCount(sp.generated);
+  const deleted = toCount(sp.deleted);
   const status = sp.status ?? 'all';
   const q = (sp.q ?? '').trim();
   const level = sp.level ?? 'all';

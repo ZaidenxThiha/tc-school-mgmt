@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
+import { money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 import StudentCombobox from '@/components/student-combobox';
 
@@ -19,7 +20,7 @@ async function create(formData: FormData) {
   const employeeId = Number(formData.get('employee_id'));
   if (!employeeId) throw new Error('Employee is required');
   await sql`insert into absences (employee_id, absent_date, hours, role, section_id, reason, notes)
-    values (${employeeId}, ${String(formData.get('absent_date') ?? '')}, ${Number(formData.get('hours') ?? 0)},
+    values (${employeeId}, ${String(formData.get('absent_date') ?? '')}, ${money(formData, 'hours')},
             ${String(formData.get('role') ?? 'MT')}, ${num('section_id')}, ${txt('reason')}, ${txt('notes')})`;
   redirect('/absences');
 }

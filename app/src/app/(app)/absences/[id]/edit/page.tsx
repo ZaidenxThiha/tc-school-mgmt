@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
+import { reqId, money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -16,8 +17,8 @@ async function save(id: number, formData: FormData) {
     return v && String(v).trim() !== '' ? String(v).trim() : null;
   };
   await sql`update absences set
-      employee_id = ${Number(formData.get('employee_id'))}, absent_date = ${String(formData.get('absent_date') ?? '')},
-      hours = ${Number(formData.get('hours') ?? 0)}, role = ${String(formData.get('role') ?? 'MT')},
+      employee_id = ${reqId(formData, 'employee_id')}, absent_date = ${String(formData.get('absent_date') ?? '')},
+      hours = ${money(formData, 'hours')}, role = ${String(formData.get('role') ?? 'MT')},
       section_id = ${num('section_id')}, reason = ${txt('reason')}, notes = ${txt('notes')}
     where id = ${id}`;
   redirect('/absences');

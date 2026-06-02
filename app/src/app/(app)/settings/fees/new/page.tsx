@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
+import { reqId, money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -10,15 +11,15 @@ async function create(formData: FormData) {
   await sql`insert into fee_schedule
     (level_id, effective_from, effective_to, class_fee, textbook_fee, tshirt_fee, id_card_fee, guide_fee, default_discount, notes)
     values (
-      ${Number(formData.get('level_id'))},
+      ${reqId(formData, 'level_id')},
       ${String(formData.get('effective_from') ?? '')},
       ${String(formData.get('effective_to') ?? '') || null},
-      ${Number(formData.get('class_fee') ?? 0)},
-      ${Number(formData.get('textbook_fee') ?? 0)},
-      ${Number(formData.get('tshirt_fee') ?? 0)},
-      ${Number(formData.get('id_card_fee') ?? 0)},
-      ${Number(formData.get('guide_fee') ?? 0)},
-      ${Number(formData.get('default_discount') ?? 0)},
+      ${money(formData, 'class_fee')},
+      ${money(formData, 'textbook_fee')},
+      ${money(formData, 'tshirt_fee')},
+      ${money(formData, 'id_card_fee')},
+      ${money(formData, 'guide_fee')},
+      ${money(formData, 'default_discount')},
       ${String(formData.get('notes') ?? '').trim() || null})`;
   redirect('/settings');
 }

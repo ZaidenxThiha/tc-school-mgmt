@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
+import { reqId, money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -9,7 +10,7 @@ async function create(formData: FormData) {
   await requireRole(WRITE_FINANCE);
   const channel = String(formData.get('channel'));
   const kind = String(formData.get('kind'));
-  const amt = Number(formData.get('amount') ?? 0);
+  const amt = money(formData, 'amount');
   const productId = formData.get('product_id') ? Number(formData.get('product_id')) : null;
   const qty = formData.get('qty') ? Number(formData.get('qty')) : null;
   const unit = formData.get('unit_price') ? Number(formData.get('unit_price')) : null;
@@ -19,7 +20,7 @@ async function create(formData: FormData) {
     values (
       ${String(formData.get('entry_date') ?? new Date().toISOString().slice(0,10))},
       ${String(formData.get('description') ?? '').trim() || null},
-      ${Number(formData.get('account_id'))},
+      ${reqId(formData, 'account_id')},
       ${kind === 'income' && channel === 'cash' ? amt : 0},
       ${kind === 'income' && channel === 'kpay' ? amt : 0},
       ${kind === 'expense' && channel === 'cash' ? amt : 0},

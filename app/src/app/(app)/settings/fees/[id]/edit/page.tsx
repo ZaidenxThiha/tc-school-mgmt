@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
+import { reqId, money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -8,15 +9,15 @@ async function save(id: number, formData: FormData) {
   'use server';
   await requireRole(WRITE_ADMIN);
   await sql`update fee_schedule set
-    level_id = ${Number(formData.get('level_id'))},
+    level_id = ${reqId(formData, 'level_id')},
     effective_from = ${String(formData.get('effective_from') ?? '')},
     effective_to = ${String(formData.get('effective_to') ?? '') || null},
-    class_fee = ${Number(formData.get('class_fee') ?? 0)},
-    textbook_fee = ${Number(formData.get('textbook_fee') ?? 0)},
-    tshirt_fee = ${Number(formData.get('tshirt_fee') ?? 0)},
-    id_card_fee = ${Number(formData.get('id_card_fee') ?? 0)},
-    guide_fee = ${Number(formData.get('guide_fee') ?? 0)},
-    default_discount = ${Number(formData.get('default_discount') ?? 0)},
+    class_fee = ${money(formData, 'class_fee')},
+    textbook_fee = ${money(formData, 'textbook_fee')},
+    tshirt_fee = ${money(formData, 'tshirt_fee')},
+    id_card_fee = ${money(formData, 'id_card_fee')},
+    guide_fee = ${money(formData, 'guide_fee')},
+    default_discount = ${money(formData, 'default_discount')},
     notes = ${String(formData.get('notes') ?? '').trim() || null}
     where id = ${id}`;
   redirect('/settings');

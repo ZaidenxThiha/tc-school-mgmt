@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { revalidateTag } from 'next/cache';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_ADMIN } from '@/lib/auth-guard';
+import { reqId } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -10,7 +11,7 @@ async function create(formData: FormData) {
   await requireRole(WRITE_ADMIN);
   const cap = formData.get('capacity');
   await sql`insert into sections (level_id, time_slot, is_online, capacity)
-    values (${Number(formData.get('level_id'))}, ${String(formData.get('time_slot') ?? '').trim()},
+    values (${reqId(formData, 'level_id')}, ${String(formData.get('time_slot') ?? '').trim()},
             ${formData.get('is_online') === 'on'}, ${cap ? Number(cap) : null})`;
   revalidateTag('reference'); // refresh cached sections list
   redirect('/sections');

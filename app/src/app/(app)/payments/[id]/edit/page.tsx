@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
+import { money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 async function save(id: number, formData: FormData) {
@@ -9,7 +10,7 @@ async function save(id: number, formData: FormData) {
   await sql`
     update payments set
       paid_at = ${String(formData.get('paid_at') ?? '')},
-      amount = ${Number(formData.get('amount') ?? 0)},
+      amount = ${money(formData, 'amount')},
       channel = ${String(formData.get('channel') ?? 'cash')},
       note = ${String(formData.get('note') ?? '').trim() || null}
     where id = ${id}`;

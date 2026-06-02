@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
+import { money, optMoney } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 import { mmk, monthLabel } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -11,9 +12,9 @@ async function save(id: number, formData: FormData) {
   'use server';
   await requireRole(WRITE_FINANCE);
   await sql`update invoices set
-      total_amount = ${Number(formData.get('total_amount') ?? 0)},
-      discount = ${Number(formData.get('discount') ?? 0) || 0},
-      fine = ${Number(formData.get('fine') ?? 0) || 0},
+      total_amount = ${money(formData, 'total_amount')},
+      discount = ${money(formData, 'discount')},
+      fine = ${money(formData, 'fine')},
       status = ${String(formData.get('status') ?? 'open')},
       is_new_student = ${formData.get('is_new_student') === 'on'}
     where id = ${id}`;
@@ -26,9 +27,9 @@ async function addLine(invoiceId: number, formData: FormData) {
   await sql`insert into invoice_lines (invoice_id, kind, description, qty, unit_price, amount)
     values (${invoiceId}, ${String(formData.get('kind') ?? 'other')},
             ${String(formData.get('description') ?? '').trim() || null},
-            ${Number(formData.get('qty') ?? 1)},
-            ${Number(formData.get('unit_price') ?? 0) || null},
-            ${Number(formData.get('amount') ?? 0)})`;
+            ${money(formData, 'qty', 1)},
+            ${optMoney(formData, 'unit_price')},
+            ${money(formData, 'amount')})`;
   redirect(`/billing/${invoiceId}/edit`);
 }
 

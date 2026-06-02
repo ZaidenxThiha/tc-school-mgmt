@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { requireRole, WRITE_FINANCE } from '@/lib/auth-guard';
+import { reqId, money } from '@/lib/form';
 import PageHeader from '@/components/page-header';
 
 
@@ -13,11 +14,11 @@ async function save(id: number, formData: FormData) {
   await sql`update ledger_entries set
     entry_date = ${String(formData.get('entry_date') ?? '')},
     description = ${String(formData.get('description') ?? '').trim() || null},
-    account_id = ${Number(formData.get('account_id'))},
-    income_cash = ${Number(formData.get('income_cash') ?? 0)},
-    income_kpay = ${Number(formData.get('income_kpay') ?? 0)},
-    expense_cash = ${Number(formData.get('expense_cash') ?? 0)},
-    expense_kpay = ${Number(formData.get('expense_kpay') ?? 0)},
+    account_id = ${reqId(formData, 'account_id')},
+    income_cash = ${money(formData, 'income_cash')},
+    income_kpay = ${money(formData, 'income_kpay')},
+    expense_cash = ${money(formData, 'expense_cash')},
+    expense_kpay = ${money(formData, 'expense_kpay')},
     product_id = ${productId}, qty = ${qty}, unit_price = ${unit}
     where id = ${id}`;
   redirect('/expenses');
