@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { sql } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/auth-guard';
+import { audit } from '@/lib/audit';
 import PageHeader from '@/components/page-header';
 
 
@@ -22,6 +23,7 @@ async function save(targetId: string, formData: FormData) {
 
   await sql`update users set email = ${email}, full_name = ${fullName}, role = ${role}
             where id = ${targetId}`;
+  await audit({ table: 'users', action: 'user_update', rowId: targetId, diff: { email, role } });
   redirect('/settings/users');
 }
 

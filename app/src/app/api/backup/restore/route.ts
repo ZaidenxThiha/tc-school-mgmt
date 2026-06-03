@@ -1,4 +1,6 @@
 import { auth } from '@/auth';
+import { verifyCurrentPassword } from '@/lib/auth-guard';
+import { audit } from '@/lib/audit';
 import { restoreFromPayload, type BackupPayload } from '@/lib/backup';
 
 // Owner-only restore from an uploaded backup file (multipart form, field "file").
@@ -13,11 +15,16 @@ export async function POST(req: Request) {
   }
   try {
     const form = await req.formData();
+    const password = String(form.get('password') ?? '');
+    if (!(await verifyCurrentPassword(password))) {
+      return Response.json({ error: 'Password incorrect.' }, { status: 403 });
+    }
     const file = form.get('file');
     if (!(file instanceof File)) return Response.json({ error: 'No file uploaded.' }, { status: 400 });
     const payload = JSON.parse(await file.text()) as BackupPayload;
     if (!payload?.tables) return Response.json({ error: 'Not a valid backup file (missing "tables").' }, { status: 400 });
     const restored = await restoreFromPayload(payload);
+    await audit({ table: 'backups', action: 'backup_restore_file', diff: { restored, file: file.name } });
     return Response.json({ restored });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

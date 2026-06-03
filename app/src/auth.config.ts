@@ -20,7 +20,11 @@ export const authConfig = {
       return token;
     },
     session({ session, token }) {
-      if (session.user) (session.user as { role?: string }).role = token.role as string | undefined;
+      if (session.user) {
+        const u = session.user as { id?: string; role?: string };
+        u.role = token.role as string | undefined;
+        if (token.sub) u.id = token.sub; // expose the user id (used for re-auth, self-delete guard)
+      }
       return session;
     },
   },

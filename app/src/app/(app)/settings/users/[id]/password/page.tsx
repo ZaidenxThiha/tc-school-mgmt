@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { sql } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/auth-guard';
+import { audit } from '@/lib/audit';
 import PageHeader from '@/components/page-header';
 
 
@@ -16,6 +17,7 @@ async function setPassword(targetId: string, formData: FormData) {
   const hash = await bcrypt.hash(pw, 10);
   const res = await sql`update users set password_hash = ${hash} where id = ${targetId}`;
   if (res.count === 0) throw new Error('User not found.');
+  await audit({ table: 'users', action: 'user_password_reset', rowId: targetId });
   redirect('/settings/users?changed=password');
 }
 

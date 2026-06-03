@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { sql } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/auth-guard';
+import { audit } from '@/lib/audit';
 import PageHeader from '@/components/page-header';
 
 
@@ -24,8 +25,9 @@ async function create(formData: FormData) {
   if (existing.length) throw new Error('A user with that email already exists.');
 
   const hash = await bcrypt.hash(password, 10);
-  await sql`insert into users (email, password_hash, full_name, role)
-            values (${email}, ${hash}, ${fullName}, ${role})`;
+  const rows = await sql`insert into users (email, password_hash, full_name, role)
+            values (${email}, ${hash}, ${fullName}, ${role}) returning id`;
+  await audit({ table: 'users', action: 'user_create', rowId: rows[0]?.id, diff: { email, role } });
   redirect('/settings/users');
 }
 

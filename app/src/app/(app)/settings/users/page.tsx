@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { sql } from '@/lib/db';
 import { auth } from '@/auth';
 import { requireRole } from '@/lib/auth-guard';
+import { audit } from '@/lib/audit';
 import PageHeader from '@/components/page-header';
 import { shortDate } from '@/lib/format';
 import DeleteButton from '@/components/delete-button';
@@ -24,6 +25,7 @@ async function deleteUser(targetId: string) {
   const myId = (session?.user as { id?: string } | undefined)?.id;
   if (targetId === myId) throw new Error('You cannot delete your own account.');
   await sql`delete from users where id = ${targetId}`;
+  await audit({ table: 'users', action: 'user_delete', rowId: targetId });
   revalidatePath('/settings/users');
 }
 

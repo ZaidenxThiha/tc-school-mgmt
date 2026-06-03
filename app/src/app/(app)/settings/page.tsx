@@ -36,7 +36,10 @@ export default async function SettingsPage() {
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="font-medium">Your account</div>
           {role === 'owner' && (
-            <Link href="/settings/users" className="btn-primary text-xs">Manage users →</Link>
+            <div className="flex gap-2">
+              <Link href="/settings/audit" className="btn-ghost text-xs">Audit log →</Link>
+              <Link href="/settings/users" className="btn-primary text-xs">Manage users →</Link>
+            </div>
           )}
         </div>
         <dl className="text-sm grid grid-cols-2 gap-y-1 max-w-md">

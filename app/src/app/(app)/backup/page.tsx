@@ -62,7 +62,7 @@ export default async function BackupPage() {
           <li>Business triggers are paused during restore (faster, avoids cascading recompute)</li>
           <li>Foreign keys are deferred and validated once at the end</li>
           <li>ID sequences are reset so future inserts continue cleanly</li>
-          <li>Requires the password <code>admin123</code> to confirm</li>
+          <li>Requires re-entering <strong>your own account password</strong> to confirm</li>
         </ul>
       </div>
     </div>

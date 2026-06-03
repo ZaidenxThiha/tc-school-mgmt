@@ -3,8 +3,6 @@
 import { useState, useTransition } from 'react';
 import { Download, Upload, RotateCcw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const RESTORE_PASSWORD = 'admin123';
-
 export default function BackupActions() {
   const [busy, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -35,12 +33,13 @@ export default function BackupActions() {
 
   function performRestore() {
     if (!file) { setMsg({ kind: 'err', text: 'Pick a backup file first.' }); return; }
-    if (pw !== RESTORE_PASSWORD) { setMsg({ kind: 'err', text: 'Wrong restore password.' }); return; }
+    if (!pw) { setMsg({ kind: 'err', text: 'Enter your account password to confirm.' }); return; }
     setMsg(null);
     start(async () => {
       try {
         const form = new FormData();
         form.set('file', file);
+        form.set('password', pw);
         const res = await fetch('/api/backup/restore', { method: 'POST', body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Restore failed.');
@@ -91,12 +90,13 @@ export default function BackupActions() {
               {file && <div className="text-xs text-slate-500 mt-1">Selected: {file.name} · {(file.size / 1024).toFixed(0)} KB</div>}
             </div>
             <div>
-              <label className="label">Confirm with restore password</label>
+              <label className="label">Confirm with your account password</label>
               <input
                 type="password"
                 value={pw}
                 onChange={(e) => setPw(e.target.value)}
-                placeholder="admin123"
+                placeholder="Your login password"
+                autoComplete="current-password"
                 className="input max-w-xs"
               />
             </div>

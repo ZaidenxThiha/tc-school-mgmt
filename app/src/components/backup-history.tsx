@@ -10,8 +10,6 @@ import {
 } from '@/lib/actions/backup';
 import type { BackupRow } from '@/lib/backup';
 
-const RESTORE_PASSWORD = 'admin123';
-
 export default function BackupHistory() {
   const [rows, setRows] = useState<BackupRow[]>([]);
   const [busy, start] = useTransition();
@@ -33,12 +31,12 @@ export default function BackupHistory() {
   }
 
   function restoreById(id: number) {
-    const pw = window.prompt('Enter restore password to confirm. This truncates every table first.');
-    if (pw !== RESTORE_PASSWORD) { setMsg({ kind: 'err', text: 'Wrong password.' }); return; }
+    const pw = window.prompt('Enter YOUR account password to confirm. This truncates every table first.');
+    if (!pw) { setMsg({ kind: 'err', text: 'Cancelled.' }); return; }
     setMsg(null);
     start(async () => {
       try {
-        const n = await restoreFromBackupAction(id);
+        const n = await restoreFromBackupAction(id, pw);
         setMsg({ kind: 'ok', text: `Restored ${Number(n).toLocaleString()} rows from backup #${id}.` });
         await refresh();
       } catch (e) {
