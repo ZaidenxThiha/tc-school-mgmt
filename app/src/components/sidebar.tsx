@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, UserCog, CalendarDays, Calendar, Banknote, UserX,
   Receipt, FileText, Wallet, Boxes, PartyPopper, BarChart3, Settings, Database,
-  GraduationCap, LogOut, Menu, X, ChevronLeft, ChevronRight,
+  GraduationCap, ScanFace, LogOut, Menu, X, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 const NAV = [
@@ -18,6 +18,7 @@ const NAV = [
   { href: '/absences',   label: 'Absences',   icon: UserX },
   { href: '/schedule',   label: 'Schedule',   icon: Calendar },
   { href: '/sections',   label: 'Sections',   icon: CalendarDays },
+  { href: '/attendance/scan', label: 'Attendance', icon: ScanFace },
   { href: '/billing',    label: 'Billing',    icon: FileText },
   { href: '/payments',   label: 'Payments',   icon: Receipt },
   { href: '/expenses',   label: 'Expenses',   icon: Wallet },

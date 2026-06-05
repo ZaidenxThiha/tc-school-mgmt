@@ -59,15 +59,13 @@ export default function DeleteButton({
       {open && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" role="dialog">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="bg-rose-100 text-rose-600 rounded-full p-2"><Lock size={16} /></span>
-                <div>
-                  <div className="font-semibold text-slate-900">Confirm delete</div>
-                  <div className="text-xs text-slate-500 leading-snug mt-0.5">{description}</div>
-                </div>
+            <div className="flex items-start gap-2 mb-3">
+              <span className="bg-rose-100 text-rose-600 rounded-full p-2 shrink-0"><Lock size={16} /></span>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-slate-900">Confirm delete</div>
+                <div className="text-xs text-slate-500 leading-snug mt-0.5 break-words">{description}</div>
               </div>
-              <button onClick={() => setOpen(false)} aria-label="Close" className="p-1 text-slate-400 hover:text-slate-600 -mt-1 -mr-1">
+              <button onClick={() => setOpen(false)} aria-label="Close" className="p-1 text-slate-400 hover:text-slate-600 shrink-0 -mt-1 -mr-1">
                 <X size={16} />
               </button>
             </div>

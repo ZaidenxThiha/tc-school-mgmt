@@ -18,6 +18,8 @@ venv/
 .supabase/
 coverage/
 .turbo/
+*.bak
+.env.local.supabase.bak
 
 # Business data — never commit (real names, finances, PII)
 *.xlsx
