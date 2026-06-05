@@ -59,9 +59,13 @@ async function launch(url: string, token: string): Promise<void> {
   const log = fs.openSync(path.join(engineDir, 'engine.log'), 'a');
   console.error('[face-autostart] starting face-engine sidecar…');
 
+  // Spawn token-less so the browser (browser-direct mode) can also call this
+  // local engine; binding to 127.0.0.1 keeps it to this machine. `token` is only
+  // used to gate the server-side path and is intentionally not passed here.
+  void token;
   const child = spawn(uvicorn, ['main:app', '--host', '127.0.0.1', '--port', port], {
     cwd: engineDir,
-    env: { ...process.env, FACE_ENGINE_TOKEN: token, FACE_CTX_ID: process.env.FACE_CTX_ID ?? '-1' },
+    env: { ...process.env, FACE_ENGINE_TOKEN: '', FACE_CTX_ID: process.env.FACE_CTX_ID ?? '-1' },
     detached: true,
     stdio: ['ignore', log, log],
   });

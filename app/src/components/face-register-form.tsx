@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import FaceCapture from '@/components/face-capture';
+import { embedLocally, LocalEngineError } from '@/lib/face/browser';
 import type { ComboOption } from '@/components/student-combobox';
 
 // Admin "Record Face" form: pick a student or employee, capture/upload a single
@@ -44,10 +45,21 @@ export default function FaceRegisterForm({
     setBusy(true);
     setMsg(null);
     try {
+      // Embed on the LOCAL engine in this browser — the image never leaves this
+      // laptop; only the embedding is sent to the server.
+      const faces = await embedLocally(image);
+      if (faces.length === 0) {
+        setMsg({ kind: 'err', text: 'No face detected.' });
+        return;
+      }
+      if (faces.length > 1) {
+        setMsg({ kind: 'err', text: 'Multiple faces detected. Please use a single-face photo.' });
+        return;
+      }
       const res = await fetch('/api/face-profiles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ personId: selectedId, personType, image }),
+        body: JSON.stringify({ personId: selectedId, personType, face: faces[0] }),
       });
       const data = (await res.json()) as { id?: number; error?: string };
       if (!res.ok) {
@@ -59,8 +71,9 @@ export default function FaceRegisterForm({
         setQuery('');
         router.refresh();
       }
-    } catch {
-      setMsg({ kind: 'err', text: 'Network error. Please try again.' });
+    } catch (e) {
+      const text = e instanceof LocalEngineError ? e.message : 'Network error. Please try again.';
+      setMsg({ kind: 'err', text });
     } finally {
       setBusy(false);
     }

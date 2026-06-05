@@ -5,9 +5,17 @@ Image bytes → face detections + 512-d ArcFace embeddings (`buffalo_l`). It hol
 **no database**, **no identities**, and **stores no images** — the Next.js app
 (`../app`) does all auth, matching (pgvector), attendance logic and storage.
 
-Vercel cannot run this (Python + ~300 MB ONNX models). Deploy it separately
-(Railway / Render / Fly.io / a small VPS) and point the app at it via
-`FACE_ENGINE_URL` + `FACE_ENGINE_TOKEN`.
+**Browser-direct mode (default for the camera UI):** the operator's **browser**
+calls this engine on their own laptop at `http://127.0.0.1:8000` and sends only
+the resulting embedding to the app server — so the engine runs on whatever laptop
+has the site open, even the deployed `tncengcenter` site. Just start it on that
+laptop (double-click `run.command`, or `uvicorn` below) — token-less is fine since
+it binds to localhost. CORS + Chrome Private Network Access are handled for the
+`tncengcenter` + localhost origins (override with `FACE_ALLOW_ORIGINS`).
+
+Optional **server-side mode:** the app server embeds images itself by reaching a
+sidecar via `FACE_ENGINE_URL` + `FACE_ENGINE_TOKEN`. Use this only if you host the
+engine centrally — Vercel itself cannot run it (Python + ~300 MB ONNX models).
 
 ## API
 

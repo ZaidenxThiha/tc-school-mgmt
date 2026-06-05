@@ -14,7 +14,9 @@ import base64
 import os
 
 import numpy as np
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response as FastResponse
 from pydantic import BaseModel
 
 # InsightFace + OpenCV are heavy; import lazily so the module can be linted
@@ -28,7 +30,37 @@ MODEL_NAME = os.environ.get("FACE_MODEL_NAME", "buffalo_l")
 DET_SIZE = int(os.environ.get("FACE_DET_SIZE", "640"))
 MAX_IMAGE_BYTES = int(os.environ.get("FACE_MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 
-app = FastAPI(title="face-engine", version="1.0")
+# Browsers call this engine directly from the site (browser-direct mode), so it
+# needs CORS. Default allows the deployed site + local dev; override with a
+# comma-separated FACE_ALLOW_ORIGINS, or "*" for any.
+_default_origins = "https://tncengcenter.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+ALLOW_ORIGINS = [o.strip() for o in os.environ.get("FACE_ALLOW_ORIGINS", _default_origins).split(",") if o.strip()]
+
+app = FastAPI(title="face-engine", version="1.1")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if ALLOW_ORIGINS == ["*"] else ALLOW_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def private_network_access(request: Request, call_next):
+    """Chrome's Private Network Access: a request from an HTTPS (public) page to a
+    local address (127.0.0.1) sends a CORS preflight asking permission to reach the
+    private network. Answer it so the browser allows the call."""
+    if request.method == "OPTIONS" and request.headers.get("access-control-request-private-network") == "true":
+        resp = FastResponse(status_code=204)
+        origin = request.headers.get("origin", "*")
+        allow = "*" if ALLOW_ORIGINS == ["*"] else (origin if origin in ALLOW_ORIGINS else ALLOW_ORIGINS[0])
+        resp.headers["Access-Control-Allow-Origin"] = allow
+        resp.headers["Access-Control-Allow-Methods"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        resp.headers["Access-Control-Allow-Private-Network"] = "true"
+        return resp
+    return await call_next(request)
 
 # Loaded once at startup (see lifespan below).
 _engine: FaceAnalysis | None = None
@@ -44,12 +76,13 @@ def _load_model() -> None:
 
 
 def _require_token(authorization: str | None = Header(default=None)) -> None:
-    """Reject anything without the shared bearer token."""
+    """If a token is configured, require it. When FACE_ENGINE_TOKEN is unset the
+    engine runs token-less for browser-direct LOCAL use — safe because it binds to
+    127.0.0.1, so only this machine (incl. its browser) can reach it. Set a token
+    if you ever expose the engine beyond localhost."""
     if not ENGINE_TOKEN:
-        # Fail closed: refuse to run unauthenticated in any environment.
-        raise HTTPException(status_code=500, detail="FACE_ENGINE_TOKEN is not configured")
-    expected = f"Bearer {ENGINE_TOKEN}"
-    if authorization != expected:
+        return
+    if authorization != f"Bearer {ENGINE_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 

@@ -1,20 +1,10 @@
-// Client for the Python face-engine sidecar (../../face-engine). Turns an image
-// into face detections + 512-d embeddings. The sidecar is stateless and stores
-// nothing; we forward bytes in memory and never persist the image either.
+// Server-side client for the Python face-engine sidecar (used when the app is
+// configured to reach a sidecar from the server, e.g. a hosted deployment). In
+// the browser-direct mode (default for the camera UI) the browser calls the
+// local engine itself — see lib/face/browser.ts.
 
-export type FaceQuality = {
-  size_px: number;
-  blur: number;
-  brightness: number;
-  pose_ok: boolean;
-};
-
-export type DetectedFace = {
-  bbox: [number, number, number, number]; // x, y, w, h
-  det_score: number;
-  embedding: number[]; // 512 L2-normalized floats
-  quality: FaceQuality;
-};
+export type { FaceQuality, DetectedFace } from '@/lib/face/types';
+import type { DetectedFace } from '@/lib/face/types';
 
 // Typed errors so the registration flow can show the exact required messages.
 export class NoFaceError extends Error {

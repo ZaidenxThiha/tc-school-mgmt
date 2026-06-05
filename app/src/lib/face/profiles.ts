@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { embedSingleFace } from '@/lib/face/engine';
 import { checkQuality } from '@/lib/face/quality';
 import { getFaceConfig } from '@/lib/settings';
+import type { DetectedFace } from '@/lib/face/types';
 
 export type PersonType = 'student' | 'employee';
 
@@ -18,25 +19,22 @@ export class FaceQualityError extends Error {
   }
 }
 
-// Register (or re-record) a person's face. Deactivates any existing active row
-// first so there is always exactly one active embedding per person. Stores ONLY
-// the embedding — never the image. Returns the new face_profiles id.
-export async function registerFace(opts: {
+// Insert a new active embedding for a person, deactivating any prior active one
+// (re-record), so there is always exactly one active embedding per person.
+// Stores ONLY the embedding — never an image.
+async function insertFace(opts: {
   personId: number;
   personType: PersonType;
-  imageBase64: string;
+  embedding: number[];
+  threshold: number;
   createdBy?: string | null;
   metadata?: Record<string, unknown>;
-}): Promise<{ id: number; similarityRecheck?: number }> {
-  const cfg = await getFaceConfig();
-  const face = await embedSingleFace(opts.imageBase64); // throws No/MultiFaceError
-  const q = checkQuality(face, cfg.minFacePx);
-  if (!q.ok) throw new FaceQualityError(q.reason);
-
-  const vec = toVectorLiteral(face.embedding);
+}): Promise<{ id: number }> {
+  if (!Array.isArray(opts.embedding) || opts.embedding.length !== 512) {
+    throw new Error('Invalid embedding (expected 512 floats).');
+  }
+  const vec = toVectorLiteral(opts.embedding);
   const meta = opts.metadata ?? {};
-
-  // Deactivate the prior active face (re-record), then insert the new one.
   const rows = (await sql`
     with deactivated as (
       update face_profiles set is_active = false, updated_at = now()
@@ -45,9 +43,41 @@ export async function registerFace(opts: {
     )
     insert into face_profiles (person_id, person_type, embedding, model_name, threshold_used, metadata, created_by)
     values (${opts.personId}, ${opts.personType}, ${vec}::vector, 'buffalo_l',
-            ${cfg.matchThreshold}, ${sql.json(meta as Parameters<typeof sql.json>[0])}, ${opts.createdBy ?? null})
+            ${opts.threshold}, ${sql.json(meta as Parameters<typeof sql.json>[0])}, ${opts.createdBy ?? null})
     returning id`) as unknown as { id: number }[];
   return { id: rows[0].id };
+}
+
+// Server-side registration: app server embeds the image via a reachable sidecar.
+// Used only when the app is configured to call a sidecar from the server.
+export async function registerFace(opts: {
+  personId: number;
+  personType: PersonType;
+  imageBase64: string;
+  createdBy?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<{ id: number }> {
+  const cfg = await getFaceConfig();
+  const face = await embedSingleFace(opts.imageBase64); // throws No/MultiFaceError
+  const q = checkQuality(face, cfg.minFacePx);
+  if (!q.ok) throw new FaceQualityError(q.reason);
+  return insertFace({ ...opts, embedding: face.embedding, threshold: cfg.matchThreshold });
+}
+
+// Browser-direct registration: the browser already embedded the image on the
+// local engine and sends the detected face (embedding + quality). We still apply
+// the server-side quality gate against the live thresholds.
+export async function registerFaceFromFace(opts: {
+  personId: number;
+  personType: PersonType;
+  face: DetectedFace;
+  createdBy?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<{ id: number }> {
+  const cfg = await getFaceConfig();
+  const q = checkQuality(opts.face, cfg.minFacePx);
+  if (!q.ok) throw new FaceQualityError(q.reason);
+  return insertFace({ ...opts, embedding: opts.face.embedding, threshold: cfg.matchThreshold });
 }
 
 // Deactivate (soft-delete) a person's face profile by row id.

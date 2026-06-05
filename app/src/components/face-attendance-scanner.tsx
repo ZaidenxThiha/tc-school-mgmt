@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, CameraOff, Loader2 } from 'lucide-react';
+import { embedLocally, LocalEngineError } from '@/lib/face/browser';
 
 type RecognizeFace = {
   bbox: [number, number, number, number];
@@ -134,10 +135,15 @@ export default function FaceAttendanceScanner({
         ctx.drawImage(video, 0, 0);
         const image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
+        // Embed this frame on the LOCAL engine (runs on this laptop); only the
+        // embeddings — never the image — are sent to the server for matching.
+        const detected = await embedLocally(image);
+        if (cancelled) return;
+
         const res = await fetch('/api/face-recognition/recognize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image }),
+          body: JSON.stringify({ faces: detected }),
         });
         if (!res.ok) {
           if (res.status === 429) return; // throttled; skip this frame
@@ -185,8 +191,8 @@ export default function FaceAttendanceScanner({
             }
           }
         }
-      } catch {
-        if (!cancelled) setError('Network error during scan.');
+      } catch (e) {
+        if (!cancelled) setError(e instanceof LocalEngineError ? e.message : 'Network error during scan.');
       } finally {
         inFlight.current = false;
         if (!cancelled) setBusy(false);

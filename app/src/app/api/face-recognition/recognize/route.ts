@@ -6,10 +6,12 @@ import { getFaceConfig } from '@/lib/settings';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { mapFaceError } from '@/lib/face/http';
 import { ATTENDANCE_OPERATE } from '@/lib/auth-guard';
+import type { DetectedFace } from '@/lib/face/types';
 
 // Recognize every face in one camera frame. READ-ONLY: it does not write
 // attendance — the client posts the accepted people to /api/attendance/face-record.
-// This keeps embedding cost to one pass per frame.
+// Accepts either already-embedded `faces` (browser-direct mode, default) or an
+// `image` to embed server-side. This keeps embedding to one pass per frame.
 export const maxDuration = 30;
 
 const OPERATE: readonly string[] = ATTENDANCE_OPERATE;
@@ -31,11 +33,13 @@ export async function POST(req: Request) {
   if (!rl.ok) return Response.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } });
 
   try {
-    const body = (await req.json()) as { image?: string };
-    if (!body.image) return Response.json({ error: 'image is required.' }, { status: 400 });
-
+    const body = (await req.json()) as { image?: string; faces?: DetectedFace[] };
     const cfg = await getFaceConfig();
-    const faces = await embedImage(body.image);
+    const faces: DetectedFace[] =
+      Array.isArray(body.faces) ? body.faces : body.image ? await embedImage(body.image) : [];
+    if (!Array.isArray(body.faces) && !body.image) {
+      return Response.json({ error: 'faces or image is required.' }, { status: 400 });
+    }
 
     const results: RecognizedFace[] = [];
     for (const f of faces) {
