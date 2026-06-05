@@ -46,6 +46,10 @@ function engineConfig(): { url: string; token: string } {
 // Detect + embed every face in an image (base64 jpeg/png; data: URL tolerated).
 export async function embedImage(imageBase64: string): Promise<DetectedFace[]> {
   const { url, token } = engineConfig();
+  // In local dev, transparently launch the sidecar if it isn't running yet so
+  // "Save face" / scanning works without manually starting uvicorn. No-op in prod.
+  const { ensureFaceEngine } = await import('@/lib/face/autostart');
+  await ensureFaceEngine();
   let res: Response;
   try {
     res = await fetch(`${url}/embed`, {
