@@ -3,13 +3,12 @@ import PageHeader from '@/components/page-header';
 import AttendanceTabs from '@/components/attendance-tabs';
 import FaceAttendanceScanner from '@/components/face-attendance-scanner';
 import { getFaceConfig } from '@/lib/settings';
-
-const OPERATE = ['owner', 'admin', 'accounts'];
+import { ATTENDANCE_OPERATE } from '@/lib/auth-guard';
 
 export default async function FaceAttendancePage() {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role ?? '';
-  if (!OPERATE.includes(role)) {
+  if (!(ATTENDANCE_OPERATE as readonly string[]).includes(role)) {
     return (
       <div className="page-narrow">
         <PageHeader title="Face Attendance" />
@@ -26,7 +25,8 @@ export default async function FaceAttendancePage() {
         title="Face Attendance"
         subtitle="Point the camera at the room. Recognized students and employees are recorded automatically — no class selection needed."
       />
-      <AttendanceTabs />
+      {/* The locked 'attendance' role has no access to the sibling tabs. */}
+      {role !== 'attendance' && <AttendanceTabs />}
       <FaceAttendanceScanner cooldownSeconds={cfg.cooldownSeconds} />
     </div>
   );

@@ -7,7 +7,7 @@ import PageHeader from '@/components/page-header';
 
 
 const OWNER = ['owner'] as const;
-const ROLES = ['owner', 'admin', 'accounts', 'readonly'];
+const ROLES = ['owner', 'admin', 'accounts', 'readonly', 'attendance'];
 
 async function save(targetId: string, formData: FormData) {
   'use server';
@@ -53,6 +53,7 @@ export default async function EditUser({ params }: { params: Promise<{ id: strin
             <option value="admin">Admin</option>
             <option value="accounts">Accounts</option>
             <option value="readonly">Readonly</option>
+            <option value="attendance">Attendance</option>
           </select></div>
         <div className="flex gap-2 justify-end pt-2 flex-wrap">
           <a href="/settings/users" className="btn-ghost">Cancel</a>

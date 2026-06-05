@@ -5,13 +5,14 @@ import { checkQuality } from '@/lib/face/quality';
 import { getFaceConfig } from '@/lib/settings';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { mapFaceError } from '@/lib/face/http';
+import { ATTENDANCE_OPERATE } from '@/lib/auth-guard';
 
 // Recognize every face in one camera frame. READ-ONLY: it does not write
 // attendance — the client posts the accepted people to /api/attendance/face-record.
 // This keeps embedding cost to one pass per frame.
 export const maxDuration = 30;
 
-const OPERATE = ['owner', 'admin', 'accounts'];
+const OPERATE: readonly string[] = ATTENDANCE_OPERATE;
 
 type RecognizedFace = {
   bbox: [number, number, number, number];

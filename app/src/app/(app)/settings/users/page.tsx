@@ -16,6 +16,7 @@ const ROLE_BADGE: Record<string, string> = {
   admin: 'badge-green',
   accounts: 'badge-slate',
   readonly: 'badge-slate',
+  attendance: 'badge-green',
 };
 
 async function deleteUser(targetId: string) {

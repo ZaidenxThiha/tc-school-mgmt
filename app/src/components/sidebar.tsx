@@ -29,10 +29,14 @@ const NAV = [
   { href: '/settings',   label: 'Settings',   icon: Settings },
 ] as const;
 
-export default function Sidebar({ email }: { email: string | null }) {
+export default function Sidebar({ email, role }: { email: string | null; role?: string | null }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+
+  // The dedicated 'attendance' role is locked to the Face Attendance camera, so
+  // its sidebar shows only that one link.
+  const nav = role === 'attendance' ? NAV.filter((i) => i.href === '/attendance/scan') : NAV;
 
   // Restore the desktop collapsed preference (client-only to avoid hydration mismatch).
   useEffect(() => {
@@ -63,7 +67,7 @@ export default function Sidebar({ email }: { email: string | null }) {
 
   const navList = (
     <nav className="flex-1 py-3 overflow-y-auto lg:overflow-y-visible">
-      {NAV.map((item) => {
+      {nav.map((item) => {
         const active = path === item.href || path.startsWith(item.href + '/');
         const Icon = item.icon;
         return (

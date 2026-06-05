@@ -8,7 +8,7 @@ import PageHeader from '@/components/page-header';
 
 
 const OWNER = ['owner'] as const;
-const ROLES = ['owner', 'admin', 'accounts', 'readonly'];
+const ROLES = ['owner', 'admin', 'accounts', 'readonly', 'attendance'];
 
 async function create(formData: FormData) {
   'use server';
@@ -59,6 +59,7 @@ export default async function NewUser() {
             <option value="admin">Admin — full data CRUD, no user management</option>
             <option value="accounts">Accounts — payments + ledger only</option>
             <option value="readonly">Read-only</option>
+            <option value="attendance">Attendance — face attendance camera only</option>
           </select></div>
         <div className="flex gap-2 justify-end pt-2">
           <a href="/settings/users" className="btn-ghost">Cancel</a>

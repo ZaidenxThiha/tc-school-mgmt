@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { recordPerson } from '@/lib/attendance/record';
 import { getFaceConfig } from '@/lib/settings';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { ATTENDANCE_OPERATE } from '@/lib/auth-guard';
 import type { PersonType } from '@/lib/face/profiles';
 
 // Commit attendance for people already recognized by /recognize. Takes identities
@@ -9,7 +10,7 @@ import type { PersonType } from '@/lib/face/profiles';
 // server-side regardless of what the client sends.
 export const maxDuration = 30;
 
-const OPERATE = ['owner', 'admin', 'accounts'];
+const OPERATE: readonly string[] = ATTENDANCE_OPERATE;
 
 type IncomingPerson = { personId: number; personType: PersonType; similarity: number };
 

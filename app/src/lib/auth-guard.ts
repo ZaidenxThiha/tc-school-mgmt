@@ -32,3 +32,8 @@ export async function requireRole(allowed: readonly string[]): Promise<void> {
 // Common permission sets mirroring the old RLS policies.
 export const WRITE_FINANCE = ['owner', 'admin', 'accounts'] as const; // invoices, payments, ledger
 export const WRITE_ADMIN = ['owner', 'admin'] as const;               // students, schedule, sections, employees
+
+// Who may operate the Face Attendance camera (recognize + record). Includes the
+// dedicated 'attendance' role, which is otherwise locked to that one screen (see
+// the `authorized` gate in auth.config.ts).
+export const ATTENDANCE_OPERATE = ['owner', 'admin', 'accounts', 'attendance'] as const;
