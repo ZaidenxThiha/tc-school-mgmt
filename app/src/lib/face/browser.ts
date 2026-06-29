@@ -26,6 +26,41 @@ export class LocalEngineError extends Error {
 const UNREACHABLE =
   'Can’t reach the face engine on this computer. Start it (run face-engine on this laptop) and try again.';
 
+const LAUNCHER_URL = 'http://127.0.0.1:8765';
+
+async function waitForEngine(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await localEngineReady()) return true;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return false;
+}
+
+// Ensure the local Python sidecar is running before scanning or registration.
+// Tries: already up → Next.js autostart (same laptop) → local launcher (Vercel + laptop).
+export async function ensureLocalEngine(): Promise<void> {
+  if (await localEngineReady()) return;
+
+  // When Next.js runs on this machine, the server can spawn uvicorn.
+  try {
+    await fetch('/api/face-engine/ensure', { method: 'POST', cache: 'no-store' });
+  } catch {
+    // Expected when the site is served from Vercel.
+  }
+  if (await waitForEngine(30_000)) return;
+
+  // Deployed site: the launcher (run.command) must be open on this laptop.
+  try {
+    await fetch(`${LAUNCHER_URL}/start`, { method: 'POST', cache: 'no-store' });
+  } catch {
+    // Launcher not running.
+  }
+  if (await waitForEngine(120_000)) return;
+
+  throw new LocalEngineError(UNREACHABLE);
+}
+
 // Detect + embed all faces in an image via the local sidecar.
 export async function embedLocally(imageBase64: string): Promise<DetectedFace[]> {
   let res: Response;

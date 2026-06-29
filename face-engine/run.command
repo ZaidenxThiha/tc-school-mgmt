@@ -1,8 +1,8 @@
 #!/bin/bash
-# Double-click this on the laptop to start the local face engine. It listens on
-# 127.0.0.1:8000 (this machine only) token-less, so the website — local or the
-# deployed tncengcenter site — can use it from the browser. Leave it running
-# while you register faces / run Face Attendance.
+# Double-click this on the laptop to start the local face-engine launcher. It
+# listens on 127.0.0.1:8765 and starts the engine on 127.0.0.1:8000 when the
+# site asks (Start scanning / Save face). Leave it running while you use face
+# attendance — local or the deployed tncengcenter site.
 cd "$(dirname "$0")" || exit 1
 
 if [ ! -x ./.venv/bin/uvicorn ]; then
@@ -12,5 +12,5 @@ if [ ! -x ./.venv/bin/uvicorn ]; then
   ./.venv/bin/pip install -r requirements.txt
 fi
 
-echo "Face engine running at http://127.0.0.1:8000  (keep this window open)"
-exec ./.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+echo "Face-engine launcher starting…"
+exec ./.venv/bin/python launcher.py

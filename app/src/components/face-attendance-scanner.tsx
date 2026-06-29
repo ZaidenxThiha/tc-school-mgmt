@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, CameraOff, Loader2 } from 'lucide-react';
-import { embedLocally, LocalEngineError } from '@/lib/face/browser';
+import { embedLocally, ensureLocalEngine, LocalEngineError } from '@/lib/face/browser';
 
 type RecognizeFace = {
   bbox: [number, number, number, number];
@@ -78,7 +78,9 @@ export default function FaceAttendanceScanner({
 
   async function start() {
     setError(null);
+    setBusy(true);
     try {
+      await ensureLocalEngine();
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -86,8 +88,10 @@ export default function FaceAttendanceScanner({
         await videoRef.current.play();
       }
       setScanning(true);
-    } catch {
-      setError('Could not access the camera. Check browser permissions.');
+    } catch (e) {
+      setError(e instanceof LocalEngineError ? e.message : 'Could not access the camera. Check browser permissions.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -226,8 +230,9 @@ export default function FaceAttendanceScanner({
         </div>
         <div className="flex items-center gap-2">
           {!scanning ? (
-            <button type="button" onClick={start} className="btn-primary text-sm">
-              <Camera size={14} /> Start scanning
+            <button type="button" onClick={start} disabled={busy} className="btn-primary text-sm">
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+              {busy ? 'Starting engine…' : 'Start scanning'}
             </button>
           ) : (
             <button type="button" onClick={stop} className="btn-ghost text-sm">

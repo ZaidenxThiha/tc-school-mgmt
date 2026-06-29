@@ -34,7 +34,9 @@ export async function ensureFaceEngine(): Promise<void> {
   const url = process.env.FACE_ENGINE_URL;
   const token = process.env.FACE_ENGINE_TOKEN;
   if (!url || !token) return; // not configured — embedImage throws its own clear error
-  if (process.env.NODE_ENV === 'production' || !isLocal(url)) return; // never auto-spawn in prod
+  // Never spawn on Vercel (server is remote). On a laptop running Next locally —
+  // dev or `next start` — auto-start when FACE_ENGINE_URL points at localhost.
+  if (process.env.VERCEL || !isLocal(url)) return;
   if (await healthOk(url)) return; // already running
   if (startPromise) {
     await startPromise;

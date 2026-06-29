@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import FaceCapture from '@/components/face-capture';
-import { embedLocally, LocalEngineError } from '@/lib/face/browser';
+import { embedLocally, ensureLocalEngine, LocalEngineError } from '@/lib/face/browser';
 import type { ComboOption } from '@/components/student-combobox';
 
 // Admin "Record Face" form: pick a student or employee, capture/upload a single
@@ -45,6 +45,7 @@ export default function FaceRegisterForm({
     setBusy(true);
     setMsg(null);
     try {
+      await ensureLocalEngine();
       // Embed on the LOCAL engine in this browser — the image never leaves this
       // laptop; only the embedding is sent to the server.
       const faces = await embedLocally(image);
