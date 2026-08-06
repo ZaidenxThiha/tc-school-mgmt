@@ -18,6 +18,27 @@ scheduling, payroll, attendance, inventory, and events. Cambridge level ladder
 - **Schedule** — weekly timetable per month, copy-from-previous, and **CSV import** of the class-schedule template grid.
 - **Backup** — full-database JSON backups (manual + nightly Vercel Cron), download/restore, restore guarded by the operator's own password.
 - **Payroll, Absences, Inventory, Events, Reports, Settings/Users, Audit log.**
+- **Face attendance** — camera scan at the door; local InsightFace sidecar on each laptop embeds faces in-browser, server matches against pgvector and records attendance. Admin **Record Face** for enrolment.
+
+## Face attendance (local engine)
+
+The deployed site (**https://tncengcenter.vercel.app**) cannot run Python/ONNX on Vercel. Each attendance laptop runs a small **face-engine** sidecar locally; the browser sends only 512-d embeddings to the server — **photos never leave the laptop**.
+
+**On each attendance laptop (once per session):**
+
+1. Open [`face-engine/run.command`](face-engine/run.command) (double-click) and leave the terminal open.  
+   First run installs Python deps and downloads the `buffalo_l` model (~300 MB).
+2. Open the site → **Attendance → Scan** (or **Record Face**).
+3. Click **Start scanning** — the app auto-starts the engine if it is not already running.
+
+| Port | Service |
+|------|---------|
+| `8765` | Launcher (`run.command`) — listens for “start engine” from the browser |
+| `8000` | Face engine — InsightFace detect + embed |
+
+**Local dev** (`npm run dev` on the same machine): set `FACE_ENGINE_URL=http://127.0.0.1:8000` and `FACE_ENGINE_TOKEN=…` in `app/.env.local`. The Next.js server can spawn uvicorn automatically; `run.command` is optional.
+
+**Optional server-side mode:** host `face-engine` centrally and set `FACE_ENGINE_URL` + `FACE_ENGINE_TOKEN` on Vercel for server-side embedding (not used by the default camera UI). See [`face-engine/README.md`](face-engine/README.md).
 
 ## Auth & roles
 
@@ -77,3 +98,8 @@ Required Vercel env vars:
 - `DATABASE_URL` — Neon pooled connection string
 - `AUTH_SECRET` — NextAuth secret (`openssl rand -base64 32`)
 - `CRON_SECRET` — shared Bearer token for the nightly backup cron route
+
+Optional (server-side face embedding only; browser-direct scanning does **not** need these on Vercel):
+
+- `FACE_ENGINE_URL` — hosted sidecar URL
+- `FACE_ENGINE_TOKEN` — shared bearer token matching the sidecar
