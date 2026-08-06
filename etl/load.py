@@ -74,6 +74,7 @@ INCOME_STATEMENT_FILES = [
     ("2026-02", FIN / "All Months Income Statement/February Income Statement.xlsx"),
     ("2026-03", FIN / "All Months Income Statement/March Income Statement.xlsx"),
     ("2026-04", FIN / "All Months Income Statement/April Income Statement.xlsx"),
+    ("2026-05", FIN / "All Months Income Statement/May Income Statement.xlsx"),
 ]
 
 EVENT_FILES = [
@@ -566,12 +567,35 @@ def lookup_account(name: Any) -> str | None:
         "government tax": "Government Tax",
         "event": "Event",
         "personal expense": "Personal Expense",
-        "special case": "Special Case",
+        "teacher salary": "ESL Teacher Salary",
+        "goverment tax": "Government Tax",
+        "printing expense": "Office Stationery",
+        "miscellaneous expense": "Other Expense",
+        "capital expenditure": "One-time Capital & Large Operational Expense",
+        "one time capital & large operational expense": "One-time Capital & Large Operational Expense",
         "other expense": "Other Expense",
     }
     for k, v in canon_map.items():
         if k in s: return v
     return None
+
+def _general_expense_cols(header: tuple[Any, ...]) -> dict[str, int] | None:
+    cells = [str(c or "").strip().lower() for c in header]
+    if "date" not in cells or not any("description" in c for c in cells):
+        return None
+    def idx(label: str) -> int:
+        for i, c in enumerate(cells):
+            if label in c.replace("  ", " "):
+                return i
+        return -1
+    ic = next((i for i, c in enumerate(cells) if "income" in c and "cash" in c), -1)
+    ik = next((i for i, c in enumerate(cells) if "income" in c and ("k pay" in c or "kpay" in c)), -1)
+    oc = next((i for i, c in enumerate(cells) if ("outcome" in c or "expense" in c) and "cash" in c and "income" not in c), -1)
+    ok = next((i for i, c in enumerate(cells) if ("outcome" in c or "expense" in c) and ("k pay" in c or "kpay" in c)), -1)
+    chart = next((i for i, c in enumerate(cells) if "chart" in c), idx("account name"))
+    return {"date": idx("date"), "desc": idx("description"), "chart": chart,
+            "ic": ic, "ik": ik, "oc": oc, "ok": ok}
+
 
 def gen_ledger_entries() -> list[str]:
     rows = []
@@ -581,10 +605,18 @@ def gen_ledger_entries() -> list[str]:
         for src, sn in (("GeneralExpense", "General Expense"), ("OfficeExpense", "Office Expense")):
             if sn not in wb.sheetnames: continue
             ws = wb[sn]
-            for r in ws.iter_rows(min_row=5, values_only=True):
+            all_rows = list(ws.iter_rows(values_only=True))
+            gen_cols: dict[str, int] | None = None
+            start = 5
+            for i, hr in enumerate(all_rows[:12]):
+                if src == "GeneralExpense":
+                    gen_cols = _general_expense_cols(hr)
+                    if gen_cols and gen_cols["ic"] >= 0:
+                        start = i + 1
+                        break
+            for r in all_rows[start - 1:]:
                 if not r: continue
                 first = r[0]
-                # Skip blank / header / summary rows
                 if first is None and (len(r) < 4 or r[1] is None): continue
                 d = parse_date(first)
                 desc = (str(r[1]).strip() if len(r)>1 and r[1] else None)
@@ -598,6 +630,13 @@ def gen_ledger_entries() -> list[str]:
                     expense_kpay = 0
                     qty = r[4] if len(r) > 4 else None
                     unit = to_int_money(r[5]) if len(r) > 5 else None
+                elif gen_cols:
+                    acct_name = r[gen_cols["chart"]] if gen_cols["chart"] >= 0 and len(r) > gen_cols["chart"] else None
+                    income_cash  = to_int_money(r[gen_cols["ic"]]) if gen_cols["ic"] >= 0 and len(r) > gen_cols["ic"] else 0
+                    income_kpay  = to_int_money(r[gen_cols["ik"]]) if gen_cols["ik"] >= 0 and len(r) > gen_cols["ik"] else 0
+                    expense_cash = to_int_money(r[gen_cols["oc"]]) if gen_cols["oc"] >= 0 and len(r) > gen_cols["oc"] else 0
+                    expense_kpay = to_int_money(r[gen_cols["ok"]]) if gen_cols["ok"] >= 0 and len(r) > gen_cols["ok"] else 0
+                    qty = unit = None
                 else:
                     income_cash  = to_int_money(r[4]) if len(r)>4 else 0
                     income_kpay  = to_int_money(r[5]) if len(r)>5 else 0
